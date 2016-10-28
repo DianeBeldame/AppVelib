@@ -4,7 +4,7 @@ library(RJSONIO)
 library(ggplot2)
 
 
-inputFile <- "data/data_all_Paris.jjson_2016-09-01-1472703936"
+inputFile <- "data/data_all_Paris.jjson_2016-10-01-1475295963"
 con  <- file(inputFile, open = "r")
 data <- list()
 i <- 0
@@ -15,7 +15,7 @@ while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
   i <- i +1
   if (i %% 100 == 0)
   {
-    printf(i)
+    print(i)
   }
 } 
 
