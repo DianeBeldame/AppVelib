@@ -23,11 +23,9 @@ close(con)
 
 # Parse date fields from posix
 # TODO: which timezone should we use?
-data$download_date_parsed <- as.POSIXct(data$download_date[1], origin="1970-01-01", tz="GMT")
-data$last_update_parsed <- as.POSIXct(data$last_update[1]/1000, origin="1970-01-01", tz="GMT")
+data$download_date_parsed <- as.POSIXct(data$download_date, origin="1970-01-01", tz="GMT")
+data$last_update_parsed <- as.POSIXct(data$last_update/1000, origin="1970-01-01", tz="GMT")
 #retrieve day
-data$day <- weekdays(data$last_update_parsed, abbreviate = TRUE)
-#retrieve hour
 data$day <- weekdays(data$last_update_parsed, abbreviate = TRUE)
 # retrieve hour
 data$hour <- as.numeric(format(data$last_update_parsed, "%H"))
