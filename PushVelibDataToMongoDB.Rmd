@@ -1,0 +1,101 @@
+---
+title: "Velib Data to MongoDB"
+author: "Denis Molin"
+date: "1 novembre 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Chargement des données
+
+Les données sont chargées sur le site de JCDecaux (https://developer.jcdecaux.com/#/opendata/vls?page=getstarted).
+
+On utliser SimplifyVector=TRUE pour formater nos données en data.frame.
+
+```{r cars}
+library(jsonlite)
+contract_name     <- "paris"
+api_key           <- "8790a9d54fbeb2ac4a93d67d9358467ce5cc0085" # a remplacer par votre clé
+my.data.stations  <- fromJSON(paste0("https://api.jcdecaux.com/vls/v1/stations?contract=",contract_name,"&apiKey=",api_key),simplifyVector = TRUE)
+
+```
+
+## Créer une base de donnée mongo: velib 
+
+Voici la marche à suivre pour installer mongodb sous Windows:
+1. Téléchargez la version de MongoDB sur http://www.mongodb.org/downloads
+2. Créer le répertoire qui contiendra les données: c:\data\db
+3. Créer le répertoire qui contiendra les logs: c:\data\logs
+4. Créer un fichier de config et le déposer dans c:\data, dont voici le contenu:
+  bind_ip = 127.0.0.1
+  dbpath = C:\data\db
+  logpath = C:\data\logs\mongo-server.log
+  verbose=v
+5. Activer le fichier de config:
+	a- Se placer dans le répertoire d'installation de MongoDB, où se trouve le fichier mongod.exe
+	b- Taper: 
+	mongod.exe --config c:\data\mongo.cfg --install
+6. Lancer le service MongoDB en tapant: c:\Windows\System32\net start mongodb
+
+L'utilitaire robomongo, téléchargeable sur https://robomongo.org/ permet de gérer ses bases mongo et  accessoirement vérifier que mongodb est bien installé sur son poste et si les collections sont bien remplies comme souhaité. 
+
+Pour créer notre base de donnée "velibs" et notre permière collection "stations", on peut donc soit utiliser robomongo, soit le faire directement sous R.
+
+Sous R, on utilisera le package mongolite. La base et la collection seront créées dès la première insertion.
+Avant d'envoyer les éléments de la dataframe dans notre base mongo, on va préparer le terrain à l'indexation géospatiale (https://docs.mongodb.com/v3.0/tutorial/build-a-2dsphere-index/). Pour cela, il faut mettre en forme notre dataframe en lui ajoutant un champ composé d'un vecteur à deux éléments: le premier élément est la longitude, le second la latitude.
+
+```{r pressure, echo=FALSE}
+
+# on génère nos vecteurs à 2 élements
+loc                              <- lapply(split(my.data.stations$position,1:nrow(my.data.stations)),function(x) c(x$lng,x$lat))
+type                             <- lapply(split(my.data.stations$position,1:nrow(my.data.stations)),function(x) "Points")
+tmp                              <- cbind(coordinates=loc,type=type)
+my.data.stations$loc <- as.data.frame(tmp)
+my.data.stations$loc$type        <- "Point"
+
+# affichage de la structure JSON du premier element de la liste.
+print(toJSON(my.data.stations[1,],pretty=TRUE))
+
+library(mongolite)
+m      <- mongo(collection = "stations", db = "velibs")
+output <- m$insert(my.data.stations)
+```
+
+
+## Créer l'index geospatial
+
+La création de l'index se fait dans le shell mongo avec la commande suivante:  db.getCollection('stations').createIndex({'loc':"2dsphere"})
+L'indexation "loc_2dsphere" doit être visible sous robomongo.
+
+```{r}
+
+```
+
+## exemple de requête
+
+voir https://docs.mongodb.com/v3.2/tutorial/query-a-2dsphere-index/
+
+exemple dans le mongo shell:
+db.getCollection('stations').find({loc : {$near : { $geometry : {type : "Point" , coordinates : [2.3432934 , 48.8520422]} , $maxDistance : 200}}})
+cette requête doit renvoyer 5 documents
+
+```{r}
+library(ggmap)
+address <- "8 boulevard saint michel, paris"
+my.coordinates <- as.data.frame(geocode(address))
+distance <- 200 # en metres
+x<-paste0('{ "loc" : { "$near" : { "$geometry" :  { "type" : "Point" , "coordinates" : [ ',my.coordinates$lon, ' , ', my.coordinates$lat,'] } ,  "$maxDistance" : ',distance,'}}}')
+output <- m$find(x)
+
+library(leaflet)
+my.map <- leaflet() %>%
+  addTiles() %>%  # Add default OpenStreetMap map tiles
+#  addMarkers(data = my.coordinates,lng=my.coordinates$lon, lat=my.coordinates$lat)
+  addMarkers(data = output, lng=output$position$lng, lat=output$position$lat)
+my.map  # Print the map
+
+```
+
