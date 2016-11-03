@@ -18,10 +18,33 @@ On utliser SimplifyVector=TRUE pour formater nos données en data.frame.
 ```{r cars}
 library(jsonlite)
 contract_name     <- "paris"
-api_key           <- "8790a9d54fbeb2ac4a93d67d9358467ce5cc0085" # a remplacer par votre clé
+api_key           <- "" # a remplacer par votre clé
 my.data.stations  <- fromJSON(paste0("https://api.jcdecaux.com/vls/v1/stations?contract=",contract_name,"&apiKey=",api_key),simplifyVector = TRUE)
 
 ```
+
+
+Je vous propose de mettre votre clé dans votre `.Rprofile` pour éviter de la poser sur GitHub en public. 
+Plus d'infos sur les `.Rprofile` ici : 
+<http://www.gettinggeneticsdone.com/2013/07/customize-rprofile.html>
+
+Et tant qu'à faire, de faire de même pour vos id/mdp mongoDB : 
+
+```{r, eval = FALSE}
+my.env <- new.env()
+
+local( 
+      {
+	    # API JCDECAUX
+      key  <- "la clé"
+      
+      # mongoDB
+      user_mongo <- "id fourni"
+      pwd_mongo  <- "mdp fourni"},  env = my.env)
+
+```
+
+Mémo : ne poussez pas votre .Rprofile sur github 
 
 ## Créer une base de donnée mongo: velib 
 
