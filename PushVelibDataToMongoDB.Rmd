@@ -99,3 +99,25 @@ my.map  # Print the map
 
 ```
 
+## lecture des donnees historisees
+update(query, update = '{"$set":{}}', upsert = FALSE, multiple = FALSE)
+
+
+```{r}
+inputFile <- "data/data_all_Paris.jjson_2016-09-01-1472703936.gz"
+con       <- file(inputFile, open = "r")
+while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
+  line_data <- jsonlite::fromJSON(oneLine)
+  for(i in 1:nrow(line_data)){
+    date_     <- as.POSIXct(line_data$last_update[i]/1000, origin="1970-01-01", tz="GMT")
+    my.query  <- paste0('{ "number" : ', line_data$number[i],'}')
+    tmp       <- line_data[i,c("bike_stands","last_update","available_bike_stands","available_bikes","status","download_date")]
+    tmp$last_update_date <- date_
+    output    <- m$update(query=my.query,update = paste0('{"$push": {"serie" :{ "last_update_date" : "',date_,'" ,"bike_stands" : ',tmp$bike_stands,', "last_update" : ',tmp$last_update,', "available_bike_stands" : ',tmp$available_bike_stands,', "available_bikes" : ',tmp$available_bikes,', "status" : "',tmp$status,'", "download_date" : ',tmp$download_date,'}}}'),upsert = TRUE)
+  }
+}
+close(con)
+
+
+```
+
