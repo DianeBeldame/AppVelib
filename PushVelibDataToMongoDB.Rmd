@@ -123,8 +123,10 @@ my.map  # Print the map
 ```
 
 ## lecture des donnees historisees
+
 update(query, update = '{"$set":{}}', upsert = FALSE, multiple = FALSE)
 
+Notez qu'ici je fais un choix de schéma pour la base. Le choix du schéma est conditionné par les cas d'utilisation. Il y a plusieurs façons de faire. C'est un point que nous devrons discuter lors de notre réunion. J'essaie par la suite de faire une query qui renvoie des données historisé d'une station sur une periode donnée. C'est le seul cas d'utilisation que je vois pour le moment.
 
 ```{r}
 inputFile <- "data/data_all_Paris.jjson_2016-09-01-1472703936.gz"
@@ -144,3 +146,41 @@ close(con)
 
 ```
 
+## query de données historisées
+
+Voici les elements de base pour requête pour une station donnée les données historisées sur une période donnée. Je pense que ça valide le choix du schéma.
+
+```{r}
+
+library(mongolite)
+m      <- mongo(collection = "stations", db = "velibs") # à modifier si on utilise la base en remote. Pour les tests j'utilise ma base locale
+
+# on utilise aggregate qui prend un pipeline
+# dans cet exemple:
+#  1. on selectionne la station 901 avec { "$match": {"number" : 901}}
+#  2. on extrait tout le document que l'on déplie suivant le tableau serie { "$unwind": "$serie"}
+#  3. on filtre suivant last_update du tableau serie: { "$match": {"serie.last_update" : {"$lt": 1.471365e+12}}}
+#  4. on selectionne les champs que l'on veut sortir 
+
+tab <- m$aggregate('[
+  { "$match": {"number" : 901}},
+  { "$unwind": "$serie"},
+  { "$match": {"serie.last_update" : {"$lt": 1.471365e+12}}},
+  { "$project" : {"_id": 0, "serie.last_update" : 1, "serie.available_bikes":1 } }
+  ]')
+
+
+
+# J'ai un problème de conversion de date: si vous pouviez le corriger...
+library(ggplot2)
+ggplot(tab$serie)+aes(x=as.POSIXct(last_update,origin="1970-01-01", tz="GMT"),y=available_bikes)+geom_line()+labs(title="station 901",x="date",y="available bikes")+scale_x_date(date_labels = "%d %c")
+
+```
+
+Je pense qu'on a toutes les briques de bases pour commencer une app shiny de visualisation des données:
+- on donne les deux adresses: départ et arrivées
+- on fixe une période de temps: date temps début et fin
+- on affiche les données historisées des stations de départ et d'arrivée
+qu'en pensez-vous?
+
+Il reste à clarifier le problème des formats de dates.
