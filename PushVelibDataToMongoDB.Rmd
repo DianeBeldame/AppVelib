@@ -18,7 +18,7 @@ On utliser SimplifyVector=TRUE pour formater nos données en data.frame.
 ```{r cars}
 library(jsonlite)
 contract_name     <- "paris"
-api_key           <- "" # a remplacer par votre clé
+api_key           <- my.env$key # a remplacer par votre clé
 my.data.stations  <- fromJSON(paste0("https://api.jcdecaux.com/vls/v1/stations?contract=",contract_name,"&apiKey=",api_key),simplifyVector = TRUE)
 
 ```
@@ -83,14 +83,15 @@ my.data.stations$loc$type        <- "Point"
 print(toJSON(my.data.stations[1,],pretty=TRUE))
 
 library(mongolite)
-m      <- mongo(collection = "stations", db = "velibs")
-output <- m$insert(my.data.stations)
+#m      <- mongo(collection = "stations", db = "velibs")
+m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+#output <- m$insert(my.data.stations)
 ```
 
 
 ## Créer l'index geospatial
 
-La création de l'index se fait dans le shell mongo avec la commande suivante:  db.getCollection('stations').createIndex({'loc':"2dsphere"})
+La création de l'index se fait dans le shell mongo avec la commande suivante:  db.getCollection('velib').createIndex({'loc':"2dsphere"})
 L'indexation "loc_2dsphere" doit être visible sous robomongo.
 
 ```{r}
@@ -129,16 +130,32 @@ update(query, update = '{"$set":{}}', upsert = FALSE, multiple = FALSE)
 Notez qu'ici je fais un choix de schéma pour la base. Le choix du schéma est conditionné par les cas d'utilisation. Il y a plusieurs façons de faire. C'est un point que nous devrons discuter lors de notre réunion. J'essaie par la suite de faire une query qui renvoie des données historisé d'une station sur une periode donnée. C'est le seul cas d'utilisation que je vois pour le moment.
 
 ```{r}
-inputFile <- "data/data_all_Paris.jjson_2016-09-01-1472703936.gz"
-con       <- file(inputFile, open = "r")
-while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
-  line_data <- jsonlite::fromJSON(oneLine)
-  for(i in 1:nrow(line_data)){
-    date_     <- as.POSIXct(line_data$last_update[i]/1000, origin="1970-01-01", tz="GMT")
-    my.query  <- paste0('{ "number" : ', line_data$number[i],'}')
-    tmp       <- line_data[i,c("bike_stands","last_update","available_bike_stands","available_bikes","status","download_date")]
-    tmp$last_update_date <- date_
-    output    <- m$update(query=my.query,update = paste0('{"$push": {"serie" :{ "last_update_date" : "',date_,'" ,"bike_stands" : ',tmp$bike_stands,', "last_update" : ',tmp$last_update,', "available_bike_stands" : ',tmp$available_bike_stands,', "available_bikes" : ',tmp$available_bikes,', "status" : "',tmp$status,'", "download_date" : ',tmp$download_date,'}}}'),upsert = TRUE)
+files <- list.files(path="./data",pattern = "*.gz")
+for(j in 1:length(files)){
+  inputFile <- paste0("data/",files[j])
+  compteur  <- 0
+  con       <- file(inputFile, open = "r")
+  while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
+    line_data <- jsonlite::fromJSON(oneLine)
+    for(i in 1:nrow(line_data)){
+      if (compteur %% 100 == 0)
+      {
+        print(paste0(files[j]," : ",compteur," lines sent"))
+      }
+      my.query  <- paste0('{ "number" : ', line_data$number[i],'}')
+      tmp       <- line_data[i,c("bike_stands","last_update","available_bike_stands","available_bikes","status","download_date")]
+      tmp$last_update_parsed   <- as.POSIXct(line_data$last_update[i]/1000, origin="1970-01-01", tz="GMT")
+      tmp$download_date_parsed <- as.POSIXct(line_data$download_date[i], origin="1970-01-01", tz="GMT")
+      #retrieve day
+      tmp$day   <- weekdays(tmp$last_update_parsed, abbreviate = TRUE)
+      # retrieve hour
+      tmp$hour  <- as.numeric(format(tmp$last_update_parsed, "%H"))
+      # retrive minutes
+      tmp$minute  <- as.numeric(format(tmp$last_update_parsed, "%M"))
+      output    <- m$update(query=my.query,update = paste0('{"$push": {"serie" :{ "last_update_parsed" : "',tmp$last_update_parsed,'" ,"day" : "',tmp$day,'" ,"hour" : ',tmp$hour,' ,"minute" : ',tmp$minute,' ,"bike_stands" : ',tmp$bike_stands,', "last_update" : ',tmp$last_update,', "available_bike_stands" : ',tmp$available_bike_stands,', "available_bikes" : ',tmp$available_bikes,', "status" : "',tmp$status,'", "download_date" : ',tmp$download_date,', "download_date_parsed" : "',tmp$download_date_parsed,'"}}}'),upsert = TRUE)
+      compteur  <- compteur + 1
+      
+    }
   }
 }
 close(con)
