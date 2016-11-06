@@ -83,8 +83,10 @@ my.data.stations$loc$type        <- "Point"
 print(toJSON(my.data.stations[1,],pretty=TRUE))
 
 library(mongolite)
-m      <- mongo(collection = "stations", db = "velibs")
+m      <- mongo(collection = "velib", db = "velibs")
 #m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+#m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@r.guyader.pro"),verbose = TRUE, db = "velib")
+
 output <- m$insert(my.data.stations)
 ```
 
@@ -197,9 +199,26 @@ ggplot(tab$serie)+aes(x=as.POSIXct(last_update,origin="1970-01-01", tz="GMT"),y=
 ```
 
 Je pense qu'on a toutes les briques de bases pour commencer une app shiny de visualisation des données:
-- on donne les deux adresses: départ et arrivées
+- on donne les deux adresses: départ et arrivée
 - on fixe une période de temps: date temps début et fin
 - on affiche les données historisées des stations de départ et d'arrivée
 qu'en pensez-vous?
 
 Il reste à clarifier le problème des formats de dates.
+
+
+Ci-dessous, juste pour voir le nombre de lignes dans les fichiers de données historiques.
+```{r}
+files <- list.files(path="./data",pattern = "*.gz")
+for(j in 1:length(files)){
+  inputFile <- paste0("data/",files[j])
+  compteur  <- 0
+  con       <- file(inputFile, open = "r")
+  while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
+    compteur <- compteur + 1
+  }
+  print(paste0(files[j], " : ", compteur," lignes"))
+}
+
+```
+
