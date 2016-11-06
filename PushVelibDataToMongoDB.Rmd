@@ -83,9 +83,9 @@ my.data.stations$loc$type        <- "Point"
 print(toJSON(my.data.stations[1,],pretty=TRUE))
 
 library(mongolite)
-#m      <- mongo(collection = "stations", db = "velibs")
-m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
-#output <- m$insert(my.data.stations)
+m      <- mongo(collection = "stations", db = "velibs")
+#m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+output <- m$insert(my.data.stations)
 ```
 
 
@@ -137,11 +137,12 @@ for(j in 1:length(files)){
   con       <- file(inputFile, open = "r")
   while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
     line_data <- jsonlite::fromJSON(oneLine)
+    if (compteur %% 100 == 0)
+    {
+      print(paste0(files[j]," : ",compteur," lines sent"))
+    }
     for(i in 1:nrow(line_data)){
-      if (compteur %% 100 == 0)
-      {
-        print(paste0(files[j]," : ",compteur," lines sent"))
-      }
+      
       my.query  <- paste0('{ "number" : ', line_data$number[i],'}')
       tmp       <- line_data[i,c("bike_stands","last_update","available_bike_stands","available_bikes","status","download_date")]
       tmp$last_update_parsed   <- as.POSIXct(line_data$last_update[i]/1000, origin="1970-01-01", tz="GMT")
@@ -153,9 +154,10 @@ for(j in 1:length(files)){
       # retrive minutes
       tmp$minute  <- as.numeric(format(tmp$last_update_parsed, "%M"))
       output    <- m$update(query=my.query,update = paste0('{"$push": {"serie" :{ "last_update_parsed" : "',tmp$last_update_parsed,'" ,"day" : "',tmp$day,'" ,"hour" : ',tmp$hour,' ,"minute" : ',tmp$minute,' ,"bike_stands" : ',tmp$bike_stands,', "last_update" : ',tmp$last_update,', "available_bike_stands" : ',tmp$available_bike_stands,', "available_bikes" : ',tmp$available_bikes,', "status" : "',tmp$status,'", "download_date" : ',tmp$download_date,', "download_date_parsed" : "',tmp$download_date_parsed,'"}}}'),upsert = TRUE)
-      compteur  <- compteur + 1
+      
       
     }
+    compteur  <- compteur + 1
   }
 }
 close(con)
