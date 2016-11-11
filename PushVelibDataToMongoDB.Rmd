@@ -70,6 +70,8 @@ Pour créer notre base de donnée "velibs" et notre permière collection "statio
 Sous R, on utilisera le package mongolite. La base et la collection seront créées dès la première insertion.
 Avant d'envoyer les éléments de la dataframe dans notre base mongo, on va préparer le terrain à l'indexation géospatiale (https://docs.mongodb.com/v3.0/tutorial/build-a-2dsphere-index/). Pour cela, il faut mettre en forme notre dataframe en lui ajoutant un champ composé d'un vecteur à deux éléments: le premier élément est la longitude, le second la latitude.
 
+http://blog.mongodb.org/post/65517193370/schema-design-for-time-series-data-in-mongodb
+
 ```{r pressure, echo=FALSE}
 
 # on génère nos vecteurs à 2 élements
@@ -125,7 +127,7 @@ my.map  # Print the map
 
 ```
 
-## lecture des donnees historisees
+## lecture des donnees historisees (see http://vlsstats.ifsttar.fr/)
 
 update(query, update = '{"$set":{}}', upsert = FALSE, multiple = FALSE)
 
@@ -133,10 +135,11 @@ Notez qu'ici je fais un choix de schéma pour la base. Le choix du schéma est c
 
 ```{r}
 files <- list.files(path="./data",pattern = "*.gz")
-for(j in 1:length(files)){
+for(j in 2:length(files)){
   inputFile <- paste0("data/",files[j])
   compteur  <- 0
   con       <- file(inputFile, open = "r")
+  # pour moi: update stopped at i=172 & compteur=1064
   while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
     line_data <- jsonlite::fromJSON(oneLine)
     if (compteur %% 100 == 0)
@@ -208,13 +211,13 @@ tab <- m$aggregate(paste0('[
   { "$match": {"number" : 31705}},
   { "$unwind": "$serie"},
   { "$match": {"serie.last_update" : {"$lt": {"$numberLong": "',as.integer(as.POSIXct("2016-07-02 02:09:51 GMT", origin="1970-01-01", tz="GMT"))*1000,'"}}}},
-  { "$project" : {"_id": 0, "serie.last_update" : 1, "serie.available_bikes":1 , "serie.available_bikes_stands":1,"number": 1} }
+  { "$project" : {"_id": 0, "serie.last_update" : 1, "serie.available_bikes":1 , "serie.available_bike_stands":1,"number": 1} }
   ]')) 
 
 
 # J'ai un problème de conversion de date: si vous pouviez le corriger...
 library(ggplot2)
-ggplot(tab$serie)+aes(x=as.POSIXct(last_update/1000,origin="1970-01-01", tz="GMT"),y=available_bikes)+geom_line()+labs(title=paste0('station ',tab$number[1]),x="date",y="available bikes")+scale_x_datetime(date_labels = "%c")+geom_line(aes(x=as.POSIXct(tab$serie$last_update/1000,origin="1970-01-01", tz="GMT"),y=tab$serie$number))
+ggplot(tab$serie)+aes(x=as.POSIXct(last_update/1000,origin="1970-01-01", tz="GMT"),y=available_bikes)+geom_line(col="green",lwd=2,)+labs(title=paste0('station ',tab$number[1]),x="date",y="available bikes")+scale_x_datetime(date_labels = "%c")+geom_line(aes(x=as.POSIXct(tab$serie$last_update/1000,origin="1970-01-01", tz="GMT"),y=tab$serie$available_bike_stands+tab$serie$available_bikes),col="red",lwd=2)
 
 ```
 
