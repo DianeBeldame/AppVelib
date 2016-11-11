@@ -4,3 +4,4 @@ library(mongolite)
 
 mongo(collection = "velib",  url = "mongodb://user:mdp@localhost/velib",
       verbose = TRUE, options = ssl_options())$count()
+TEST
