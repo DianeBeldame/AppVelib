@@ -14,14 +14,14 @@ for(j in 1:length(files)){
   # pour moi: update stopped at i=172 & compteur=1064
   while (length(oneLine <- readLines(con, n = 1, warn = FALSE)) > 0) {
     line_data <- jsonlite::fromJSON(oneLine)
-    print(compteur)
-    if (compteur %% 100 == 0)
+#    print(compteur)
+    if (compteur %% 10 == 0)
     {
-      print(paste0(files[j]," : ",compteur," lines sent"))
+      print(paste0(Sys.time(),files[j]," : ",compteur," lines sent"))
     }
     
- if (TRUE){   
-#    if ( !(j==1 & compteur <870) ){
+# if (TRUE){   
+    if ( !(j==1 & compteur <330) ){
     for(i in 1:nrow(line_data)){
       
       my.query  <- paste0('{ "number" : ', line_data$number[i],'}')
