@@ -56,7 +56,7 @@ Voici la marche à suivre pour installer mongodb sous Windows:
   bind_ip = 127.0.0.1
   dbpath = C:\data\db
   logpath = C:\data\logs\mongo-server.log
-  verbose=v
+  verbose =v
 5. Activer le fichier de config:
 	a- Se placer dans le répertoire d'installation de MongoDB, où se trouve le fichier mongod.exe
 	b- Taper: 
