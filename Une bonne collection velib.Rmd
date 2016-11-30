@@ -1,0 +1,236 @@
+---
+title: "Une bonne collection"
+author: "Denis Molin"
+date: "3 décembre 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Quelques explications
+
+Quelques explications et une fonction pour mettre à jour des champs dans la collection velib avec des données historiséés, c'est-ç-dire ajouter de nouvelles données temporelles à la collection velib existante et également y intègrer les données météo par exemple.
+
+Tout d'abord un point sur les collection existantes:
+- la collection velib: qui contient les données de toutes les stations.
+- les collections velib_XXXXX: qui contiennent les données historiques, les mises à jours et la météo de la station XXXXX. 
+
+L'utilisation d'une collection unique est plus difficile mais plus efficace lorsque l'on veut compulser les données de nombreuses stations. 
+
+Les avantages d'une collection unique sont les suivants:
+- tout d'abord les performances: mongodb est fait pour ça (et c'est vrai, les requêtes vont très vite!),
+- l'index 2dsphere permet de faire des requêtes geographiques,
+- on peut avoir les données d'une grand nombre de stations en une seule requête avec l'aggrégation (très utile pour l'étape de classification nécessaire pour classer les stations par ordre de predictabilité, en effet, il n'est pas certain de pouvoir trouver un modèle général en ne travaillant que sur une station tirée au hasard, encore faut il vérifier que la station choisi n'a pas de comportement aberrant)
+
+L'inconvénient, c'est qu'on n'a pas réussi à remplir efficacement la table velib rapidement, et aussi qu'il ne nous paraissait pas évident de pouvoir ajouter des données au fil de l'eau dans le champ "serie" qui est un tableau de document.
+
+Pour y arriver il nous faut donc plusieurs choses:
+- remplir la collection velib avec les données temps réel
+- remplir la collection velib avec les données des collections velib_xxxx
+- savoir faire les requêtes sur la collection velib
+
+```{r cars}
+summary(cars)
+```
+
+## remplir la collection velib avec les données temps réel
+
+### Collection velib
+
+Dans la collection velib, les données temporelles sont stockées dans le champ "serie" qui est un tableau de document qui contiennent tous les même champs:
+- last_update_parse       -> non présent dans la collection velib_xxxx  
+- day                     -> présent dans la collection velib_xxxx  
+- hour                    -> présent dans la collection velib_xxxx  
+- minute                  -> non présent dans la collection velib_xxxx  
+- bike_stands             -> présent dans la collection velib_xxxx  
+- last_update             -> présent dans la collection velib_xxxx  
+- available_bike_stands   -> présent dans la collection velib_xxxx  
+- available_bike          -> présent dans la collection velib_xxxx  
+- status                  -> présent dans la collection velib_xxxx  
+- download_date           -> présent dans la collection velib_xxxx  
+- download_date_parsed    -> non présent dans la collection velib_xxxx  
+
+Le champ "number" est au niveau du champs "serie".
+
+### Collection velib_xxxx
+
+La collection velib_xxxx est une collection de document avec les champs suivants:
+- number                 -> présent dans la collection velib
+- status                 -> présent dans "serie" de la collection velib
+- bike_stands            -> présent dans "serie" de la collection velib
+- available_bikes_stands -> présent dans "serie" de la collection velib
+- available_bikes        -> présent dans "serie" de la collection velib
+- last_update            -> présent dans "serie" de la collection velib
+- day                    -> présent dans "serie" de la collection velib
+- hour                   -> présent dans "serie" de la collection velib
+- weather                -> a ajouter dans "serie" de la collection velib
+- weather_1h             -> a ajouter dans "serie" de la collection velib
+
+On remarque que l'on aurait pu ajouter le mois et l'année en plus du jour de l'heure. Mais bon ce n'est pas grave, tout est dans le timestamp, mais on peut l'ajouter.
+
+Voici le code pour pouvoir ajouter des données au fil de l'eau dans velib grâce à la fonction update de mongo.Cette fonction nécessite deux choses:
+- query: une requête pour identifier l'élement du tableau à mettre à jour, s'il n'est pas présent, il sera créé.
+- update: une requête de mise à jour qui va renseigner les champs à modifier ou créer.
+
+
+```{r pressure, echo=FALSE}
+
+# la requête d'identification
+AjouteEnregistrement<-function(m,my.data.frame){
+  # m : object mongo qui fait la connexion avec la base et la collection velib, donc celle qui contien toutes les stations et le champ tableau de document "serie"
+  # my.data.frame: la data frame qui contient les données à envoyer.
+  # j'ai fait un choix arbitraire des noms des champs de cette dataframe
+  # j'ai supposé qu'elle contient les champs avec les noms suivant:
+  #- number                 -> présent dans la collection velib
+  #- status                 -> présent dans "serie" de la collection velib
+  #- bike_stands            -> présent dans "serie" de la collection velib
+  #- available_bikes_stands -> présent dans "serie" de la collection velib
+  #- available_bikes        -> présent dans "serie" de la collection velib
+  #- last_update            -> présent dans "serie" de la collection velib
+  #- day                    -> présent dans "serie" de la collection velib
+  #- hour                   -> présent dans "serie" de la collection velib
+  #- weather                -> a ajouter dans "serie" de la collection velib
+  #- weather_1h             -> a ajouter dans "serie" de la collection velib
+  
+  my.field.names <- names(my.data.frame)
+  my.field.names <- my.field.names[which(!my.field.names=="number")]
+  
+  for(i in 1:nrow(my.data.frame)){  
+    
+    # on definit la requête d'identification de l'élément du tableau
+    my.query <- paste0('{
+  "number": ',my.data.frame$number[i],',
+  "serie": {
+    "$elemMatch": {
+      "last_update": { "$numberLong":"',my.data.frame$last_update[i],'"}
+    }
+  }
+}')
+    
+    # on verifie que l'element existe
+    if (nrow(m$find(my.query))>0){
+      elementexist <- TRUE
+    }
+    else{
+      elementexist <- FALSE
+    }
+      
+    
+    # on definit la requete de mise à jour des données
+    if(elementexist){
+      # si l'element correspondant a last_update existe deja alors on met a jour avec l'instruction set
+      
+      my.update <- '{
+  "$set": {'
+      for(j in 1:length(my.field.names)){
+        
+        if (is.numeric(my.data.frame[i,my.field.names[j]])){
+          my.update <- paste0(my.update,'"serie.$.',my.field.names[j],'": ',my.data.frame[i,my.field.names[j]])
+        }
+        else{
+          my.update <- paste0(my.update,'"serie.$.',my.field.names[j],'": "',my.data.frame[i,my.field.names[j]],'"')
+        }
+        
+        if(j==length(my.field.names)){
+          my.update <- paste0(my.update,'}}')
+        }
+        else{
+          my.update <- paste0(my.update,',')
+        }
+      }
+    }
+    else{
+      # si l'element n'existe pas alors on fait un push
+
+      my.query <- paste0('{
+                            "number": ',my.data.frame$number[i],'
+                          }')
+      
+      
+      my.update <- '{
+  "$push": { "serie" : {'
+      for(j in 1:length(my.field.names)){
+        
+        if (is.numeric(my.data.frame[i,my.field.names[j]])){
+          my.update <- paste0(my.update,'"',my.field.names[j],'": ',my.data.frame[i,my.field.names[j]])
+        }
+        else{
+          my.update <- paste0(my.update,'"',my.field.names[j],'": "',my.data.frame[i,my.field.names[j]],'"')
+        }
+        
+        if(j==length(my.field.names)){
+          my.update <- paste0(my.update,'}}}')
+        }
+        else{
+          my.update <- paste0(my.update,',')
+        }
+      }
+      
+    }
+    
+    
+    
+#     my.query <- paste0('{
+#   "number": ',my.data.frame$number[i],',
+#   "serie.last_update" : ',my.data.frame$last_update[i],'
+# }')
+#     
+#     my.update <- paste0('{
+# "$addToSet": {
+# "serie" : {"status":"', my.data.frame$status[i] ,'"}}
+# }')
+#     
+#     
+#     my.update <- '{
+# "$set": {
+# "serie.$.status": "OPEN"}
+# }'
+    
+    m$update(query = my.query,update = my.update,upsert = FALSE,multiple = FALSE)
+    if(elementexist){
+      print(paste0("mise a jour ",i," / ",nrow(my.data.frame)," effectuee"))
+    }
+    else{
+      print(paste0("creation ",i," / ",nrow(my.data.frame)," effectuee"))
+    }
+    
+  }
+}
+
+
+```
+
+Exemple d'utilisation 1:
+
+Je requête toutes les données d'une station, par exemple la station 10001.
+Et j'envoie toutes données dans ma base locale (pour éviter les risques d'erreur)
+
+```{r}
+require(mongolite)
+# connection à la collection velib_10001, la collection source
+m.velib_xxxx      <-mongo(collection = "velib_31705",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+# recupération de toute la collection dans une data frame
+my.data.frame <- m.velib_xxxx$find("{}")
+
+str(my.data)
+# my.data est bien une data frame avec les nomes de colonne qui vont bien
+
+# connexion à ma collection de destitation, ici ma collection sur ma base locale
+m.velib_local     <- mongo(collection = "velib", db = "velibs2")
+
+# mise à jour de ma collection locale
+AjouteEnregistrement(m.velib_local,my.data.frame)
+
+```
+
+
+Exemple d'utilisation 2:
+
+Ajouter les donnees meteo dans une collection velib a partir de la collection weather.
+
+```{r}
+
+```
+
