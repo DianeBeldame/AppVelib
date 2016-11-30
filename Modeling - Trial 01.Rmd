@@ -1,0 +1,56 @@
+---
+title: "Modeling - Trial 01"
+author: "Denis Molin"
+date: "28 novembre 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Query simple
+
+Pour commencer, une petite requête qui récupère et affiche:
+- les données d'une journée de la semaine: au hasard, le lundi.
+- des stations situées à moins de 100m de l'adresse suivante: "8 boulevard saint michel, paris" (adresse purement arbitraire)
+
+```{r cars}
+# on definit le nombre de stations
+max_distance   <- 200
+# on definit l'adresse
+address        <- "8 boulevard saint michel, paris"
+# on definit le jour
+jour           <- "Mon"
+# on definit nb stations max
+nb_stations_max <- 6
+# on recupere les identifiants des 5
+require(ggmap)
+my.coordinates <- as.data.frame(geocode(address))
+x<-paste0('{ "loc" : { "$near" : { "$geometry" :  { "type" : "Point" , "coordinates" : [ ',my.coordinates$lon, ' , ', my.coordinates$lat,'] } ,  "$maxDistance" : ',max_distance,'}}}')
+require(mongolite)
+m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+
+
+my.aggregate <- paste0('[
+   {"$geoNear" : {
+        "near": { "type": "Point", "coordinates": [',my.coordinates$lon, ' , ', my.coordinates$lat,'] },
+        "distanceField": "dist.calculated",
+        "maxDistance": ',max_distance,',
+        "includeLocs": "dist.location",
+        "num" : ',nb_stations_max,',
+        "spherical": true
+     }
+   },
+    { "$unwind": "$serie"},
+    { "$match" : {"serie.day" : ',jour,'}},
+    { "$project" : {"_id": 0, "serie.hour" : 1, "serie.available_bikes":1 , "serie.available_bike_stands":1,"number": 1}} 
+]') 
+
+output <- m$aggregate(my.aggregate)
+output$number <- factor(output$number)
+require(ggplot2)
+ggplot(output)+aes(x=serie$hour,y=serie$available_bike_stands,col=number)+geom_point()+facet_wrap(~number,nrow=2)+xlab('hour')+ylab('# available bikes')+ggtitle(label=paste0(jour, " : ",address))
+
+```
+

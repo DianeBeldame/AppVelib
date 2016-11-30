@@ -1,0 +1,3 @@
+#!/bin/bash
+cd /home/velib/AppVelib
+Rscript "Scripts/Weather/InsertWeatherData.R"
