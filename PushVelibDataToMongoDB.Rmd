@@ -21,6 +21,7 @@ contract_name     <- "paris"
 api_key           <- my.env$key # a remplacer par votre clé
 my.data.stations  <- fromJSON(paste0("https://api.jcdecaux.com/vls/v1/stations?contract=",contract_name,"&apiKey=",api_key),simplifyVector = TRUE)
 
+save(my.data.stations,file="data/my.data.stations.RData")
 ```
 
 
@@ -85,7 +86,7 @@ my.data.stations$loc$type        <- "Point"
 print(toJSON(my.data.stations[1,],pretty=TRUE))
 
 library(mongolite)
-m      <- mongo(collection = "velib", db = "velibs")
+m      <- mongo(collection = "velibCOL", db = "velibDB")
 #m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
 #m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@r.guyader.pro"),verbose = TRUE, db = "velib")
 
@@ -95,7 +96,7 @@ output <- m$insert(my.data.stations)
 
 ## Créer l'index geospatial
 
-La création de l'index se fait dans le shell mongo avec la commande suivante:  db.getCollection('velib').createIndex({'loc':"2dsphere"})
+La création de l'index se fait dans le shell mongo avec la commande suivante:  db.getCollection('velib3').createIndex({'loc':"2dsphere"})
 L'indexation "loc_2dsphere" doit être visible sous robomongo.
 
 ```{r}
