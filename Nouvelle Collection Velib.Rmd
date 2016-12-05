@@ -1,0 +1,246 @@
+---
+title: "Nouvelle collection velib"
+author: "Denis Molin"
+date: "4 décembre 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Chargement des données
+
+Les données sont chargées sur le site de JCDecaux (https://developer.jcdecaux.com/#/opendata/vls?page=getstarted).
+
+On utliser SimplifyVector=TRUE pour formater nos données en data.frame.
+
+```{r cars}
+require(jsonlite)
+contract_name     <- "paris"
+api_key           <- my.env$key # a remplacer par votre clé
+my.data.stations  <- fromJSON(paste0("https://api.jcdecaux.com/vls/v1/stations?contract=",contract_name,"&apiKey=",api_key),simplifyVector = TRUE)
+require(mongolite)
+m      <- mongo(collection = "velib_init",db = "Velib")
+m      <- m$insert(my.data.stations)
+
+```
+
+
+
+### chargement rapide des donnees historiques (see http://vlsstats.ifsttar.fr/)
+
+Une remarque: il faut eviter les rbind dans les boucles. On s'en sort avec la fonction do.call
+
+```{r}
+# on crée d'abord une data frame complète que l'on insèrera entierement dans la collection en bulk
+
+files <- list.files(path="./data",pattern = "*.gz")
+my.data.month <- vector("list",length(files))
+
+compteur  <- 0
+temps_debut<-timestamp()
+for(j in 1:length(files)){
+  cat(files[j],"loading on going ...")
+  inputFile           <- paste0("data/",files[j])         # nom du fichier
+  con                 <- file(inputFile, open = "r")      # ouverture du fichier
+  my.data.month.temp  <- lapply(readLines(con), jsonlite::fromJSON, flatten = TRUE)  # lecture de toutes les lignes
+  cat("\r",files[j],"rbind on going ...")
+  my.data.month[[j]]  <- rbind(my.data.month.temp[[1]][FALSE,], do.call(rbind, my.data.month.temp)) # conversion en une unique data frame
+  close(con)
+  cat("\r",files[j],"loading complete \n")
+}
+
+my.data.per.month <- rbind(my.data.month[[1]][FALSE,], do.call(rbind, my.data.month)) # conversion en une unique data frame
+temps_fin<-timestamp()
+
+system.time(save(file = "DataHistoric5Months.Rdata",list = ls(all.names = TRUE)))
+system.time(write.csv(file = "DataHistoric5Months.csv",x = my.data.per.month))
+```
+
+Ajout des minutes, heures, jours, mois, années de l'enregistrement
+- date_txt  : as.POSIXct(my.data.per.month$last_update[i]/1000, origin="1970-01-01", tz="GMT")
+- minute    : as.numeric(format(my.data.per.month$date_txt, "%M"))
+- hour      : as.numeric(format(my.data.per.month$date_txt, "%H"))
+- day       : weekdays(my.data.per.month$date_txt, abbreviate = FALSE)
+- month     : months(my.data.per.month$date_txt, abbreviate = FALSE)
+- day_num   : as.numeric(format(my.data.per.month$date_txt, "%d"))
+- month_num : as.numeric(format(my.data.per.month$date_txt, "%m"))
+- year      : as.numeric(format(my.data.per.month$date_txt, "%Y"))
+- date      : as.numeric(format(my.data.per.month$date_txt, "%Y"))*1e10 + as.numeric(format(my.data.per.month$date_txt, "%m"))*1e8+ +as.numeric(format(my.data.per.month$date_txt, "%d"))*1e6+as.numeric(format(my.data.per.month$date_txt, "%H"))*1e4
+
+```{r}
+
+my.data.per.month$date_txt   <- as.POSIXct(my.data.per.month$last_update/1000, origin="1970-01-01", tz="GMT")
+my.data.per.month$minute     <- as.numeric(format(my.data.per.month$date_txt, "%M"))
+my.data.per.month$hour       <- as.numeric(format(my.data.per.month$date_txt, "%H"))
+my.data.per.month$day        <- weekdays(my.data.per.month$date_txt, abbreviate = FALSE)
+my.data.per.month$month      <- months(my.data.per.month$date_txt, abbreviate = FALSE)
+my.data.per.month$day_num    <- as.numeric(format(my.data.per.month$date_txt, "%d"))
+my.data.per.month$month_num  <- as.numeric(format(my.data.per.month$date_txt, "%m"))
+my.data.per.month$year       <- as.numeric(format(my.data.per.month$date_txt, "%Y"))
+my.data.per.month$date       <- with(my.data.per.month,year*1e10+month_num*1e8+day_num*1e6+hour*1e4)
+tmp                          <- round(my.data.per.month$hour/3,0)*3
+tmp[tmp==24]                 <- 100
+my.data.per.month$date_synop <- with(my.data.per.month,year*1e10+month_num*1e8+day_num*1e6+tmp*1e4)
+system.time(save(file = "DataHistoric5Months.Rdata",list = ls(all.names = TRUE)))
+```
+
+
+### chargement des données météo historiques Meteo France (SYNOP)
+
+Je n'avais que les données de Meteo France (SYNOP), mais le principe sera le même qu'avec des données DarkSky biensur.
+Les données SYNOP sont disponibles sous forme de fichiers csv mensuels à l'adresse suivante https://donneespubliques.meteofrance.fr/?fond=produit&id_produit=90&id_rubrique=32
+Le descriptif des données se trouve sur https://donneespubliques.meteofrance.fr/?fond=produit&id_produit=90&id_rubrique=32
+J'ai téléchargé les données de Juillet à Decembre 2016.
+
+```{r}
+files <- c("synop.201607.csv","synop.201608.csv","synop.201609.csv","synop.201610.csv","synop.201611.csv","synop.201612.csv")
+my.data.meteo.month <- vector("list",length(files))
+for(j in 1:length(files)){
+  inputFile           <- paste0("data/",files[j])         # nom du fichier
+  my.data.meteo.month[[j]]  <- read.csv2(file=inputFile)  # lecture de toutes les lignes
+}
+my.data.meteo <- rbind(my.data.meteo.month[[1]][FALSE,], do.call(rbind, my.data.meteo.month)) # conversion en une unique data frame
+# on ne veut que la meteo pris à Orly, code 07149
+my.data.meteo <- my.data.meteo[my.data.meteo$numer_sta==07149,]
+system.time(save(file = "DataHistoricMeteoFrance.Rdata",list = c("my.data.meteo")))
+system.time(write.csv(file = "DataHistoricMeteoFrance.csv",x = my.data.meteo))
+
+
+```
+
+### on associe la météo aux données historiques des stations
+
+```{r}
+
+require(mongolite)
+m      <- mongo(collection = "velib",db = "Velib")
+
+# on contruit un object json par station
+temps_debut<-timestamp()
+for(i in 1:nrow(my.data.stations)){
+  x       <- as.list(my.data.stations[i,])
+  x       <- x[-which(names(x)=="loc")] # pas necessaire
+  serie   <- my.data.per.month[my.data.per.month$number==my.data.stations[i,"number"],]
+  serie   <- merge(serie,my.data.meteo,by.x="date_synop",by.y="date")
+  x$serie <- serie
+  json    <- jsonlite::toJSON(x,auto_unbox = TRUE)
+  output  <- m$insert(json)
+  output  <- m$update(query = paste0('{"number": ',my.data.stations$number[i],'}'),update = paste0('{"$set": {"loc.type" : "Point", "loc.coordinates" : [',my.data.stations[i,]$position$lng,',',my.data.stations[i,]$position$lat,']}}'))
+  cat("\r",i,"/",nrow(my.data.stations))
+
+}
+
+# for(i in 950:nrow(my.data.stations)){
+#     output  <- m$update(query = paste0('{"number": ',my.data.stations$number[i],'}'),update = paste0('{"$set": {"loc.type" : "Point", "loc.coordinates" : [',my.data.stations[i,]$position$lng,',',my.data.stations[i,]$position$lat,']}}'))
+#     cat("\r",i," / ",nrow(my.data.stations))
+# 
+# }
+
+
+temps_fin<-timestamp()
+
+#
+m$index(add = '{"loc":"2dsphere"}')
+
+
+
+```
+
+
+## test de l'indexation géospatial
+
+voir https://docs.mongodb.com/v3.2/tutorial/query-a-2dsphere-index/
+
+exemple dans le mongo shell:
+db.getCollection('stations').find({loc : {$near : { $geometry : {type : "Point" , coordinates : [2.3432934 , 48.8520422]} , $maxDistance : 200}}})
+cette requête doit renvoyer 5 documents
+
+```{r}
+require(ggmap)
+address <- "8 boulevard saint michel, paris"
+my.coordinates <- as.data.frame(geocode(address))
+distance <- 200 # en metres
+x<-paste0('{ "loc" : { "$near" : { "$geometry" :  { "type" : "Point" , "coordinates" : [ ',my.coordinates$lon, ' , ', my.coordinates$lat,'] } ,  "$maxDistance" : ',distance,'}}}')
+output <- m$find(x)
+output<-output[-which(names(output)=="serie")]
+output$position<-as.data.frame(do.call(rbind,output$position))
+require(leaflet)
+my.map <- leaflet() %>%
+  addTiles() %>%  # Add default OpenStreetMap map tiles
+  addMarkers(data = output, lng=output$position$lng, lat=output$position$lat)
+my.map  # Print the map
+
+```
+
+
+## test d'une requete
+
+## Query simple
+
+Pour commencer, une petite requête qui récupère et affiche:
+- les données d'une journée de la semaine: au hasard, le lundi.
+- des stations situées à moins de 100m de l'adresse suivante: "8 boulevard saint michel, paris" (adresse purement arbitraire)
+
+```{r cars}
+# on definit le nombre de stations
+max_distance   <- 200
+# on definit l'adresse
+address        <- "8 boulevard saint michel, paris"
+# on definit le jour
+jour           <- "lundi"
+# on definit nb stations max
+nb_stations_max <- 6
+# on recupere les identifiants des 5
+require(ggmap)
+my.coordinates <- as.data.frame(geocode(address))
+x<-paste0('{ "loc" : { "$near" : { "$geometry" :  { "type" : "Point" , "coordinates" : [ ',my.coordinates$lon, ' , ', my.coordinates$lat,'] } ,  "$maxDistance" : ',max_distance,'}}}')
+require(mongolite)
+# m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+m      <- mongo(collection = "velib",db = "Velib")
+
+
+# geoNear permet de requêter suivant l'index 2dsphere avec aggregation (https://docs.mongodb.com/v3.2/reference/operator/aggregation/geoNear/)
+my.aggregate <- paste0('[
+   {"$geoNear" : {
+        "near": { "type": "Point", "coordinates": [',my.coordinates$lon, ' , ', my.coordinates$lat,'] },
+        "distanceField": "distance",
+        "maxDistance": ',max_distance,',
+        "includeLocs": "location",
+        "num" : ',nb_stations_max,',
+        "spherical": true
+     }
+   },
+   { "$unwind": "$serie"},
+   { "$match" : {"serie.day" : "',jour,'"}},
+   { "$project" : {"_id": 0, "number": 1, "serie.hour" : 1, "serie.available_bikes":1 , "serie.available_bike_stands":1, "distance":1, "location":1}} 
+]') 
+
+m      <- mongo(collection = "velib",db = "Velib")
+output2 <- m$aggregate(my.aggregate)
+unique(output2$number)
+m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+my.aggregate <- paste0('[
+   {"$geoNear" : {
+        "near": { "type": "Point", "coordinates": [',my.coordinates$lon, ' , ', my.coordinates$lat,'] },
+        "distanceField": "dist.calculated",
+        "maxDistance": ',max_distance,',
+        "includeLocs": "dist.location",
+        "num" : ',nb_stations_max,',
+        "spherical": true
+     }
+   },
+   { "$unwind": "$serie"},
+   { "$match" : {"serie.day" : "Mon"}},
+   { "$project" : {"_id": 0, "number": 1, "serie.hour" : 1, "serie.available_bikes":1 , "serie.available_bike_stands":1}} 
+]')
+output3 <- m$aggregate(my.aggregate)
+unique(output3$number)
+
+output <- cbind(data.frame(number=unlist(output$number)),output$serie)
+output$number <- factor(output$number)
+require(ggplot2)
+ggplot(output)+aes(x=serie$hour,y=serie$available_bike_stands,col=number)+geom_point()+facet_wrap(~number,nrow=2)+xlab('hour')+ylab('# available bikes')+ggtitle(label=paste0(jour, " : ",address))
+
+```
