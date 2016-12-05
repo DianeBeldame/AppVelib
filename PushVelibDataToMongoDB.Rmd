@@ -136,7 +136,7 @@ Notez qu'ici je fais un choix de schéma pour la base. Le choix du schéma est c
 
 ```{r}
 files <- list.files(path="./data",pattern = "*.gz")
-for(j in 2:length(files)){
+for(j in 1:length(files)){
   inputFile <- paste0("data/",files[j])
   compteur  <- 0
   con       <- file(inputFile, open = "r")
