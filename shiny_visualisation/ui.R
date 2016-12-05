@@ -1,5 +1,15 @@
-
 library(shiny)
+library(ggmap)
+library(leaflet)
+library(mongolite)
+library(dplyr)
+library(ggmap)
+library(leaflet)
+library(mongolite)
+library(dplyr)
+library(lubridate)
+library(scales)
+library(forcats)
 
 shinyUI(fluidPage(
   
@@ -16,7 +26,8 @@ shinyUI(fluidPage(
     ),
     # Show plot
     mainPanel(
-       leafletOutput("geocode")
+       leafletOutput("geocode"), 
+       plotOutput("graphes_semaine_station_selectionnee")
     )
   )
 ))
