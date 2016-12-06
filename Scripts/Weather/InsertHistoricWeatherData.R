@@ -16,7 +16,7 @@ api_key           <- my.env$api_key_darksky
 # The weather is retrieved for every 60 minutes
 weather_frequency_minutes <- 30
 
-weather_data <- list()
+weather_data <- character()
 nweather_data <- 1
 
 weather_api_call <- 0
@@ -25,7 +25,7 @@ weather_api_call_limit <- 10000
 weather_api_start <- ymd_hms("2016-07-01 00:00:00", tz = timezone)
 weather_api_end <- now()
 # For test
-#weather_api_end <- ymd_hms("2016-07-01 02:00:00", tz = timezone)
+weather_api_end <- ymd_hms("2016-07-01 02:00:00", tz = timezone)
 weather_api_current <- weather_api_start
 
 # total number of calls needed
@@ -50,7 +50,7 @@ while (weather_api_current <= weather_api_end) {
   #
   weather_url <- sprintf("https://api.darksky.net/forecast/%s/%f,%f,%i", api_key, lat, lon, as.integer(weather_api_current))
   historic_weather  <- jsonlite::fromJSON(weather_url)
-  weather_data[[nweather_data]] <- historic_weather
+  weather_data[nweather_data] <- jsonlite::toJSON(historic_weather)
   
   weather_api_call <- weather_api_call + 1
   # To be sure that the date is the same
