@@ -1,0 +1,50 @@
+---
+title: "Modeling - Trial 02"
+author: "Denis Molin"
+date: "9 décembre 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Premier essai
+
+
+```{r meteo_dark_sky, echo=FALSE}
+require(mongolite)
+# m      <- mongo(collection = "velib",db = "Velib")
+m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+output_target_hour    <- My.Single.Query(m,address = "8 boulevard saint michel, paris",hour = 10,day="lundi")
+output_predictor_hour <- My.Single.Query(m,address = "8 boulevard saint michel, paris",hour = 9,day ="lundi")
+
+require(ggplot2)
+ggplot(output_target_hour)+aes(x=day_num,y=available_bike_stands,color=month_num)+geom_point()+facet_wrap(~number,nrow=2)
+
+# on construit le data set:
+# target= available_bike_stands de la première station
+premiere_station <- output_target_hour$number[1]
+
+# pour chaque jour on cherche le dernier instant de la première station
+day_num               <- unique(output_target_hour$day_num)
+data.premiere_station <- subset(output_target_hour,number==premiere_station)
+data.target           <- do.call(rbind,lapply(split(data.premiere_station,data.premiere_station$day_num),function(x){return(x[order(x$minute),][nrow(x),])}))
+
+require(dplyr) 
+data.predictor        <- anti_join(rbind(output_target_hour,output_predictor_hour),data.target) # on garde tous les elements passés
+data.predictor        <- do.call(rbind,lapply(split(data.predictor,data.predictor$day_num),                                        function(x,y){return(x[x$minute<y$minute[y$day_num==unique(x$day_num)],])},y=data.target))
+data.predictor       <- do.call(rbind,lapply(split(data.predictor,c(data.predictor$day_num,data.predictor$number)),function(x){return(x[order(x$minute),][nrow(x),])}))
+
+my.reg <- glm(available_bike_stands~precipIntensity+temperature+humidity+visibility,data = output_target_hour,family = "poisson")
+
+require(dplyr)
+temp                  <- output_target_hour %>% group_by(hour,day_num,number) %>% summarise(available_bike_stands_avg = mean(available_bike_stands))
+temp$id               <- paste0(temp$hour,temp$day_num)
+output_target_hour$id <- paste0(output_target_hour$hour,output_target_hour$day_num)
+require(reshape2)
+temp2<-split(temp,temp$id)
+lapply(split(temp,temp$id),function(x) dcast(x,available_bike_stands_avg~number))
+
+```
+
