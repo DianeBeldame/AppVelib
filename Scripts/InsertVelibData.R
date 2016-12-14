@@ -47,17 +47,48 @@ data_jcdecaux$last_update_parsed <- NULL
 # 
 dbName <- "velib"
 collectionNameTemplate <- "velib_%i"
+collectionNameAll <- "velib_all"
 if (!is.null(my.env$user_mongo) && !is.null(my.env$pwd_mongo)) {
   mongo_url <- paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@localhost/", dbName)
 } else {
   mongo_url <- paste0("mongodb://localhost/", dbName)
 }
 
+# Number of ignored record (already inserted)
+# Use an object, otherwise not incremented in the lapply loop
+CreateCounter <- function(curr.count) {
+  list(
+    increment = function(amount) {
+      curr.count <<- curr.count + amount
+    },
+    value = function() {
+      return(curr.count)
+    }
+  )
+}
+nIgnore <- CreateCounter(0)
+
+m_all <- mongo(collection = collectionNameAll, db = dbName, url = mongo_url)
 lapply(split(data_jcdecaux, data_jcdecaux$number), function(x)
 {
   m <- mongo(collection = sprintf(collectionNameTemplate, x$number), db = dbName, url = mongo_url)
-  m$insert(x)
+  
+  match <- sprintf('{"last_update" : %f}', x$last_update)
+  out <- m$find(match)
+  if (nrow(out) > 0) {
+    #print(paste0("Already existing record with timestamp ", x$last_update, " for station ", x$number))
+    # Increment the counter of ignored record
+    nIgnore$increment(1)
+  }
+  else {
+    # Insert in the separated database
+    m$insert(x)
+    # Insert in the grouped database
+    m_all$insert(x)
+  }
 })
+
+print(paste0(nIgnore$value(), " record ingored because already existing in the database"))
 
 
 q('yes')
