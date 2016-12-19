@@ -1,15 +1,12 @@
 library(shiny)
-library(ggmap)
 library(leaflet)
 library(mongolite)
-library(dplyr)
 library(ggmap)
-library(leaflet)
-library(mongolite)
 library(dplyr)
 library(lubridate)
 library(scales)
 library(forcats)
+
 
 m <- mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),
            verbose = TRUE, options = ssl_options())
