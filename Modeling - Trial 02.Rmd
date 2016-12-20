@@ -7,44 +7,318 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+source('~/12 - F O R M A T I O N/R/Machine Learning with R/DataScientist Certificate/Project2/AppVelib/FonctionsUtiles2.R')
+address <- "8 boulevard saint michel,paris"
+# address <- "8 boulevard magenta,paris"
+weekday <- "lundi"
 ```
 
-## Premier essai
+## Constitution d'un data set
 
+On se focalise sur les stations situées à moins de 200m (6 au maximum) de l'adresse suivante: `r address` pour la journée de `r weekday`.
 
-```{r meteo_dark_sky, echo=FALSE}
+```{r meteo_dark_sky, echo=FALSE, warning=FALSE}
 require(mongolite)
 # m      <- mongo(collection = "velib",db = "Velib")
 m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
-output_target_hour    <- My.Single.Query(m,address = "8 boulevard saint michel, paris",hour = 10,day="lundi")
-output_predictor_hour <- My.Single.Query(m,address = "8 boulevard saint michel, paris",hour = 9,day ="lundi")
+output_target_hour            <- My.Single.Query(m,address = address,hour = 0:24,day=weekday,date_start = "2016/10/01",date_end = "2016/12/01",max_distance = 2000)
+length(unique(output_target_hour$number))
+# output_target_hour$dateday    <- apply( output_target_hour[ , c("month_num","day_num") ] , 1 , paste , "2016",collapse = "/")
+output_target_hour$dateday    <- as.factor(2016*10000 + as.numeric(levels(output_target_hour$month_num))[output_target_hour$month_num] *100 + as.numeric(levels(output_target_hour$day_num))[output_target_hour$day_num] )
+output_target_hour$summary<- as.factor(output_target_hour$summary)
 
 require(ggplot2)
-ggplot(output_target_hour)+aes(x=day_num,y=available_bike_stands,color=month_num)+geom_point()+facet_wrap(~number,nrow=2)
+ggplot(output_target_hour)+aes(x=hour+minute/60,y=available_bike_stands,color=dateday)+geom_line(lwd=1)+facet_wrap(~number,nrow=2)+ggtitle(label = "available_bike_stands")
+ggplot(output_target_hour)+aes(x=hour+minute/60,y=available_bikes,color=dateday)+geom_line(lwd=1)+facet_wrap(~number,nrow=2)+ggtitle(label = "available_bikes")
 
-# on construit le data set:
-# target= available_bike_stands de la première station
-premiere_station <- output_target_hour$number[1]
 
-# pour chaque jour on cherche le dernier instant de la première station
-day_num               <- unique(output_target_hour$day_num)
-data.premiere_station <- subset(output_target_hour,number==premiere_station)
-data.target           <- do.call(rbind,lapply(split(data.premiere_station,data.premiere_station$day_num),function(x){return(x[order(x$minute),][nrow(x),])}))
+ggplot(output_target_hour)+aes(x=hour+minute/60,y=available_bike_stands,color=dateday)+geom_line(lwd=1)+facet_wrap(~summary,nrow=2)+ggtitle(label = "available_bike_stands")
+```
 
-require(dplyr) 
-data.predictor        <- anti_join(rbind(output_target_hour,output_predictor_hour),data.target) # on garde tous les elements passés
-data.predictor        <- do.call(rbind,lapply(split(data.predictor,data.predictor$day_num),                                        function(x,y){return(x[x$minute<y$minute[y$day_num==unique(x$day_num)],])},y=data.target))
-data.predictor       <- do.call(rbind,lapply(split(data.predictor,c(data.predictor$day_num,data.predictor$number)),function(x){return(x[order(x$minute),][nrow(x),])}))
+On remarques plusieurs choses:
+- les stations n'ont pas la même capacité
+- il y a des periodes où les stations sont pleines de velibs et donc ne peuvent plus accueillir de nouveaux vélibs.
+- on remarque que le soir, certaines stations n'ont plus de vélibs
+- l'heure est clairement une variable importante.
 
-my.reg <- glm(available_bike_stands~precipIntensity+temperature+humidity+visibility,data = output_target_hour,family = "poisson")
+```{r}
+require(ggplot2)
+ggplot(output_target_hour)+aes(x=hour+minute/60,y=available_bike_stands,color=number)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+ggtitle(label = "available_bike_stands")
+ggplot(output_target_hour)+aes(x=hour+minute/60,y=available_bikes,color=number)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+ggtitle(label = "available_bikes")
+
+```
+
+Il y a des stations voisines qui ont des comportement similaires comme 5001,6031,5033
+
+```{r}
+require(ggplot2)
+ggplot(subset(output_target_hour,number %in% c(5001,5033,6031)))+aes(x=hour+minute/60,y=available_bike_stands,color=number)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+ggtitle(label = "available_bike_stands")
+
+```
+
+
+## Première tentative de modélisation: on ne prend pas en compte les stations voisines
+
+Ici, on recherche un modele qui predit le nombre de velibs disponibles pour une station donnée (la première de notre liste, et donc la plus proche de notre addresse).
+
+### model 01a: poisson direct
+
+tentative de prediction du nombre de velibs
+
+```{r, echo=FALSE}
+
+my.data.set      <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time <- my.data.set$hour+my.data.set$minute/60
+
+my.reg           <- glm(available_bikes ~  time + temperature + humidity + visibility + summary,data = my.data.set,family = "poisson")
+summary(my.reg)
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$available_bikes <- my.reg$fitted.values
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=available_bikes,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+```
+
+si on voit que la tendance est reproduite, les moments où il n'y a pas de vélib ne sont pas bien predit (ex: 9/26 apres 18h).
+
+### model 01b: poisson direct
+
+on transforme la variable temps en variable categorielle.
+
+```{r, echo=FALSE}
+
+my.data.set          <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time     <- my.data.set$hour+my.data.set$minute/60
+my.data.set$time_cat <- as.factor(my.data.set$hour/4)
+my.data.set$humidity_cat <- as.factor(round(my.data.set$humidity*5,0))
+my.data.set$month_cat <- as.factor(my.data.set$month_num)
+
+my.reg           <- glm(available_bikes ~  time_cat + summary,data = my.data.set,family = "poisson")
+summary(my.reg)
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$available_bikes <- my.reg$fitted.values
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=available_bikes,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+ggplot(my.data.set)+aes(x=time,y=precipIntensity,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+```
+
+Cette transformation ameliore significativement la performance du model.
+
+### model 01c: poisson direct
+
+on ajoute l'information du nombre de velib dans l'heure précédente.
+
+Il faut d'abord construire le dataset:
+- on calcule d'abords le moyenne de velib par heure
+
+```{r, echo=FALSE}
+my.data.set           <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time      <- my.data.set$hour+my.data.set$minute/60
+my.data.set$time_cat  <- as.factor(my.data.set$hour)
+my.data.set$time_cat2 <- as.factor(my.data.set$hour-0.5)
 
 require(dplyr)
-temp                  <- output_target_hour %>% group_by(hour,day_num,number) %>% summarise(available_bike_stands_avg = mean(available_bike_stands))
-temp$id               <- paste0(temp$hour,temp$day_num)
-output_target_hour$id <- paste0(output_target_hour$hour,output_target_hour$day_num)
-require(reshape2)
-temp2<-split(temp,temp$id)
-lapply(split(temp,temp$id),function(x) dcast(x,available_bike_stands_avg~number))
+my.data.set.avg <- my.data.set %>% group_by(time_cat2,dateday) %>% summarise(mean_available_bikes=mean(available_bikes),time_cat_after=mean(hour+2))
+
+my.data.set$key     <- apply(my.data.set[,c("dateday","hour")],1,paste,collapse="-")
+my.data.set.avg$key <- apply(my.data.set.avg[,c("dateday","time_cat_after")],1,paste,collapse="-")
+my.data.set         <-merge(my.data.set,my.data.set.avg[,c("mean_available_bikes","key")])
+
+
+my.reg           <- glm(available_bikes ~  time_cat + temperature + humidity + visibility + mean_available_bikes + summary,data = my.data.set,family = "poisson")
+summary(my.reg)
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$available_bikes <- my.reg$fitted.values
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=available_bikes,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+```
+
+### model 01d: poisson direct
+
+on discretise l'humidité 
+
+```{r, echo=FALSE}
+my.data.set           <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time      <- my.data.set$hour+my.data.set$minute/60
+my.data.set$time_cat  <- as.factor(my.data.set$hour)
+my.data.set$time_cat2 <- as.factor(my.data.set$hour-0.5)
+my.data.set$humidity_cat <- as.factor(round(my.data.set$humidity*5,0))
+
+require(dplyr)
+my.data.set.avg <- my.data.set %>% group_by(time_cat2,dateday) %>% summarise(mean_available_bikes=mean(available_bikes),time_cat_after=mean(hour+1))
+
+my.data.set$key     <- apply(my.data.set[,c("dateday","hour")],1,paste,collapse="-")
+my.data.set.avg$key <- apply(my.data.set.avg[,c("dateday","time_cat_after")],1,paste,collapse="-")
+my.data.set         <-merge(my.data.set,my.data.set.avg[,c("mean_available_bikes","key")])
+
+
+my.reg           <- glm(available_bikes ~  time_cat + temperature + humidity_cat + visibility + precipIntensity + mean_available_bikes,data = my.data.set,family = "poisson")
+summary(my.reg)
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$available_bikes <- my.reg$fitted.values
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=available_bikes,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+```
+
+### model 01e: recherche du meilleur model avec glmulti
+
+```{r}
+my.data.set           <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time      <- my.data.set$hour+my.data.set$minute/60
+my.data.set$time_cat  <- as.factor(my.data.set$hour)
+my.data.set$time_cat2 <- as.factor(my.data.set$hour-0.5)
+my.data.set$humidity_cat <- as.factor(round(my.data.set$humidity*5,0))
+
+require(dplyr)
+my.data.set.avg <- my.data.set %>% group_by(time_cat2,dateday) %>% summarise(mean_available_bikes=mean(available_bikes),time_cat_after=mean(hour+1))
+
+my.data.set$key     <- apply(my.data.set[,c("dateday","hour")],1,paste,collapse="-")
+my.data.set.avg$key <- apply(my.data.set.avg[,c("dateday","time_cat_after")],1,paste,collapse="-")
+my.data.set         <-merge(my.data.set,my.data.set.avg[,c("mean_available_bikes","key")])
+
+require(glmulti)
+glm.redefined = function(formula, data, ...) {
+glm(formula, data=data,family="poisson", ...)
+}
+
+my.reg           <- glmulti(available_bikes ~  time_cat + temperature + humidity_cat + visibility + precipIntensity + mean_available_bikes,data = my.data.set,fitfunc=glm.redefined,level = 1)
+summary(my.reg@objects[[1]])
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit2                <- my.data.set
+my.data.set.fit2$error          <- my.data.set$available_bikes-exp(as.vector(predict(my.reg,newdata = my.data.set)$averages))
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$available_bikes <- exp(as.vector(predict(my.reg,newdata = my.data.set)$averages))
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=available_bikes,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+my.data.set.fit2$hour_cat <- as.factor(my.data.set.fit2$hour)
+ggplot(my.data.set.fit2)+aes(x=time,y=error)+geom_point()+facet_wrap(~dateday,nrow=5)
+```
+
+### model 02: recherche du meilleur modele avec glmulti mais binomial
+
+prediction à 3 heures. 
+
+```{r}
+my.data.set           <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time      <- my.data.set$hour+my.data.set$minute/60
+my.data.set$time_cat  <- as.factor(my.data.set$hour/4)
+my.data.set$time_cat2 <- as.factor(my.data.set$hour-0.5)
+my.data.set$bike_dispo<- 0
+my.data.set$bike_dispo[my.data.set$available_bikes>3]<- 1
+my.data.set$bike_dispo_num <- my.data.set$bike_dispo
+my.data.set$bike_dispo<-as.factor(my.data.set$bike_dispo)
+
+require(dplyr)
+my.data.set.avg <- my.data.set %>% group_by(time_cat,dateday) %>% summarise(mean_available_bikes=mean(available_bikes),time_cat_after=mean(hour+3))
+
+my.data.set$key     <- apply(my.data.set[,c("dateday","hour")],1,paste,collapse="-")
+my.data.set.avg$key <- apply(my.data.set.avg[,c("dateday","time_cat_after")],1,paste,collapse="-")
+my.data.set         <-merge(my.data.set,my.data.set.avg[,c("mean_available_bikes","key")])
+
+
+my.reg           <- glm(bike_dispo ~  time_cat + summary + temperature + mean_available_bikes,data = my.data.set,family = "binomial")
+# my.reg           <- glm(bike_dispo ~  time_cat + summary + temperature,data = my.data.set,family = "binomial")
+summary(my.reg)
+
+require(pROC)
+
+my.roc<- roc(my.data.set$bike_dispo[],my.reg$fitted.values)
+my.roc$auc
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$bike_dispo_num  <- my.reg$fitted.values
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=bike_dispo_num,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+
+my.roc.forPlot <- data.frame(specificities=my.roc$specificities,sensitivities=my.roc$sensitivities)
+
+# ggplot(my.roc.forPlot)+aes(x=1-specificities,y=sensitivities)+geom_line(lwd=1)+ggtitle("ROC curves")+xlab("False positive rate")+ylab("True positive rate")+geom_abline(slope=1,lwd=0.5,col="black")
+
+```
+
+
+## Deuxième tentative de modélisation: on ne prend pas en compte les stations voisines
+
+```{r}
+my.data.set           <- subset(output_target_hour,number==output_target_hour$number[1])
+my.data.set$time      <- my.data.set$hour+my.data.set$minute/60
+my.data.set$time_cat  <- as.factor(my.data.set$hour)
+my.data.set$bike_dispo<- 0
+my.data.set$bike_dispo[my.data.set$available_bikes>3]<- 1
+my.data.set$bike_dispo_num <- my.data.set$bike_dispo
+my.data.set$bike_dispo<-as.factor(my.data.set$bike_dispo)
+
+require(dplyr)
+my.data.set.avg     <- my.data.set %>% group_by(time_cat,dateday) %>% summarise(mean_available_bikes=mean(available_bikes),time_cat_after=mean(hour+3))
+my.data.set$key     <- apply(my.data.set[,c("dateday","hour")],1,paste,collapse="-")
+my.data.set.avg$key <- apply(my.data.set.avg[,c("dateday","time_cat_after")],1,paste,collapse="-")
+my.data.set         <- merge(my.data.set,my.data.set.avg[,c("mean_available_bikes","key")])
+
+other_stations <- levels(output_target_hour$number)[!levels(output_target_hour$number)==output_target_hour$number[1]]
+for(i in 1:length(other_stations)){
+  my.data.set_          <- subset(output_target_hour,number==other_stations[i])
+  my.data.set_$time_cat <- as.factor(my.data.set_$hour)
+  my.data.set.avg_      <- my.data.set_ %>% group_by(time_cat,dateday) %>% summarise(mean_available_bikes=mean(available_bikes),time_cat_after=mean(hour+3))
+  names(my.data.set.avg_) <- c("time_cat","dateday",paste0("mean_available_bikes",i+1),"time_cat_after")
+  my.data.set.avg_$key  <- apply(my.data.set.avg_[,c("dateday","time_cat_after")],1,paste,collapse="-")
+  my.data.set           <- merge(my.data.set,my.data.set.avg_[,c(paste0("mean_available_bikes",i+1),"key")],by.x="key",by.y="key")
+}
+
+my.reg           <- glm(bike_dispo ~  time_cat + summary + temperature + mean_available_bikes + mean_available_bikes2 + mean_available_bikes3,data = my.data.set,family = "binomial")
+# my.reg           <- glm(bike_dispo ~  time_cat + summary + temperature,data = my.data.set,family = "binomial")
+summary(my.reg)
+
+require(pROC)
+
+my.roc<- roc(my.data.set$bike_dispo[],my.reg$fitted.values)
+my.roc$auc
+
+my.data.set$value_type          <- "actual"
+my.data.set.fit                 <- my.data.set
+my.data.set.fit$value_type      <- "fit"
+my.data.set.fit$bike_dispo_num  <- my.reg$fitted.values
+my.data.set <- rbind(my.data.set,my.data.set.fit)
+
+require(ggplot2)
+ggplot(my.data.set)+aes(x=time,y=bike_dispo_num,color=value_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=5)+scale_color_manual(values=c("#000000", "#fb0127"))
+
+
+my.roc.forPlot <- data.frame(specificities=my.roc$specificities,sensitivities=my.roc$sensitivities)
+
+# ggplot(my.roc.forPlot)+aes(x=1-specificities,y=sensitivities)+geom_line(lwd=1)+ggtitle("ROC curves")+xlab("False positive rate")+ylab("True positive rate")+geom_abline(slope=1,lwd=0.5,col="black")
 
 ```
 

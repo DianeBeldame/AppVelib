@@ -57,10 +57,114 @@ print(table(my.data.set$hour,my.data.set$summary))
 ```
 
 
-### Modelisation
+### Classification
+
 
 ```{r}
-my.data.set.before <- My.Single.Query.Single.Station(m,station_number = output_target_hour$number[1],hour = 0:24,day=weekday.before,date_start = "2016/10/01",date_end = "2016/12/01")
 
+## Classification Ascendante Hierarchique
+require(stats)
+my.data.set.meteo.scaled <- scale(my.data.set[,c("precipIntensity","precipProbability","temperature","apparentTemperature","humidity","visibility")])
+my.cah <- hclust(dist(my.data.set.meteo.scaled,"euclidian"), method = "ward.D2")
+plot(my.cah)
+plot(sort(my.cah$height,dec=TRUE))
+abline(a=3.5,b=0)
+memb <- cutree(my.cah, k = 12)
+table(memb)
+median(table(memb))
+require(factoextra)
+fviz_nbclust(my.data.set.meteo.scaled, hcut, method = "wss",k.max = 30) +
+  geom_vline(xintercept = 6, linetype = 2)
+memb <- cutree(my.cah, k = 6)
+table(memb)
+median(table(memb))
+```
+
+### modelisation
+
+```{r}
+my.data.set             <- My.Single.Query.Single.Station(m,station_number = unique(output_target_hour$number),hour = 0:24,day=weekday,date_start = "2016/07/01",date_end = "2016/12/01")
+my.data.set.daybefore   <- My.Single.Query.Single.Station(m,station_number = unique(output_target_hour$number),hour = 0:24,day=weekday.before,date_start = "2016/07/01",date_end = "2016/12/01")
+my.data.set.daybefore   <- rbind(my.data.set,my.data.set.daybefore)
+
+# on calcule la moyenne des velibs par heure dans my.data.set.daybefore
+# "status"," bike_stands"," available_bike_stands"," available_bikes"," minute"," hour"," day"," day_num"," month_num"," date"," summary"," precipIntensity"," precipProbability"," temperature"," apparentTemperature"," humidity"," visibility"," number"," time"," dateday"
+require(dplyr)
+my.data.set.daybefore <- as.data.frame(my.data.set.daybefore %>% group_by(number,dateday,hour) %>% summarise(bike_stands=mean(bike_stands),available_bike_stands=mean(available_bike_stands),available_bikes=mean(available_bikes)))
+
+# on ajoute une colonne a my.data.set qui donne les dernieres données velibs connues, i.e. à H - X heures
+X                          <- 3 # c'est ici que l'on change le nombre d'heure séparant l'heure de la demande et l'heure de la prévision
+my.data.set$key            <- as.numeric(as.character(my.data.set$dateday))*100+as.numeric(my.data.set$hour)
+decalage                   <- as.numeric(my.data.set.daybefore$hour)+X
+decalage[decalage>23]      <- decalage[decalage>23]-24+100
+my.data.set.daybefore$key  <- as.numeric(as.character(my.data.set.daybefore$dateday))*100+decalage
+
+# on se focalise sur la prediction d'une station
+# on suppose la météo connue (il faudra utiliser la prédiction pour évaluer le modèle)
+my.data <- subset(my.data.set,number==my.data.set$number[1])
+my.data <- merge(my.data,subset(my.data.set.daybefore,number==my.data.set$number[1])[,-c(1,2,3)],by.x="key",by.y="key",suffixes = c("","_current"))
+
+# on ajoute une colonne a my.data.set qui donne les données velibs connues du meme jour une semaine avant
+my.data.set.daybefore$key  <- as.numeric(as.character(my.data.set.daybefore$dateday))*100+100+as.numeric(my.data.set.daybefore$hour)
+
+# on se focalise sur la prediction d'une station
+# on suppose la météo connue (il faudra utiliser la prédiction pour évaluer le modèle)
+my.data <- merge(my.data,subset(my.data.set.daybefore,number==my.data.set$number[1])[,-c(1,2,3)],by.x="key",by.y="key",suffixes = c("","_weekbefore"))
+
+
+# dans mon exemple, on a 286 observations pour 24 variables
+# on veut modaliser la probabilité de trouver un velib (on estime qu'il faut qu'il y en ai au moins 4)
+my.data$bike_dispo <- 0
+my.data$bike_dispo[my.data$available_bikes>5] <- 1
+my.data$bike_dispo <- factor(my.data$bike_dispo)
+my.data$hour       <- factor(my.data$hour)
+
+# on regarde la répartition des nombres de velib dispo
+table(my.data$bike_dispo)
+
+# on remarque qu'il y a des velibs dispo 515/(515+60)=89% du temps
+table(my.data$bike_dispo,my.data$hour)
+
+# on crée un ensemble de test et un ensemble d'apprentissage
+# on constitue un ensemble de test équilibré pour faciliter l'estimation de la performance du modèle
+ind_bike_dispo    <- which(my.data$bike_dispo==1)
+ind_bike_nondispo <- which(my.data$bike_dispo==0)
+ind_1             <- sample(ind_bike_dispo, length(ind_bike_nondispo)/2)
+ind_0             <- sample(ind_bike_nondispo, length(ind_bike_nondispo)/2)
+my.data.test      <- my.data[c(ind_1,ind_0),]
+my.data.training  <- my.data[-c(ind_1,ind_0),]
+
+table(my.data.test$bike_dispo)
+table(my.data.training$bike_dispo)
+
+# on applique une première modélisation
+
+lbw.for.bestglm <- within(my.data.training, {
+
+   y           <- bike_dispo  # bike_dispo into y
+   bike_dispo  <- NULL        # Delete bike_dispo
+})
+
+## Reorder variables
+require(bestglm)
+lbw.for.bestglm <-lbw.for.bestglm[, c("precipIntensity","apparentTemperature","humidity","visibility","available_bike_stands_current","available_bikes_current","bike_stands_weekbefore","available_bike_stands_weekbefore","available_bikes_weekbefore","y")]
+res.bestglm <- bestglm(Xy = lbw.for.bestglm, family = binomial,IC = "BIC",method = "exhaustive")
+my.reg      <- res.bestglm$BestModel
+my.reg            <- glm(bike_dispo ~ available_bikes_current + available_bikes_weekbefore + temperature + precipIntensity,data = my.data.training,family = "binomial")
+summary(my.reg)
+
+require(pROC)
+
+my.roc<- roc(my.data.test$bike_dispo,predict(object = my.reg,newdata = my.data.test,type = "response"))
+my.roc$auc
+my.roc.forPlot <- data.frame(specificities=my.roc$specificities,sensitivities=my.roc$sensitivities)
+result.coords <- coords(my.roc, "best", best.method="closest.topleft", ret=c("threshold", "accuracy"))
+
+print(result.coords)
+mat_conf2     <- table(my.data.test$bike_dispo,predict(object = my.reg,newdata = my.data.test,type = "response")>result.coords["threshold"])
+mat_conf2
+
+require(ggplot2)
+ggplot(my.roc.forPlot)+aes(x=1-specificities,y=sensitivities)+geom_line(lwd=1)+ggtitle("ROC curves")+xlab("False positive rate")+ylab("True positive rate")+geom_abline(slope=1,lwd=0.5,col="black")
 ```
 

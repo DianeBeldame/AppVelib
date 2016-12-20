@@ -31,7 +31,7 @@ x<-paste0('{ "loc" : { "$near" : { "$geometry" :  { "type" : "Point" , "coordina
 require(mongolite)
 m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
 
-
+# geoNear permet de requêter suivant l'index 2dsphere avec aggregation (https://docs.mongodb.com/v3.2/reference/operator/aggregation/geoNear/)
 my.aggregate <- paste0('[
    {"$geoNear" : {
         "near": { "type": "Point", "coordinates": [',my.coordinates$lon, ' , ', my.coordinates$lat,'] },
@@ -43,7 +43,7 @@ my.aggregate <- paste0('[
      }
    },
     { "$unwind": "$serie"},
-    { "$match" : {"serie.day" : ',jour,'}},
+    { "$match" : {"serie.day" : "',jour,'"}},
     { "$project" : {"_id": 0, "serie.hour" : 1, "serie.available_bikes":1 , "serie.available_bike_stands":1,"number": 1}} 
 ]') 
 

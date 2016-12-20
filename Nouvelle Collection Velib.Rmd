@@ -20,9 +20,18 @@ require(jsonlite)
 contract_name     <- "paris"
 api_key           <- my.env$key # a remplacer par votre clé
 my.data.stations  <- fromJSON(paste0("https://api.jcdecaux.com/vls/v1/stations?contract=",contract_name,"&apiKey=",api_key),simplifyVector = TRUE)
+
+# on génère nos vecteurs à 2 élements
+loc                              <- lapply(split(my.data.stations$position,1:nrow(my.data.stations)),function(x) c(x$lng,x$lat))
+type                             <- lapply(split(my.data.stations$position,1:nrow(my.data.stations)),function(x) "Points")
+tmp                              <- cbind(coordinates=loc,type=type)
+my.data.stations$loc <- as.data.frame(tmp)
+my.data.stations$loc$type        <- "Point"
+
 require(mongolite)
 m      <- mongo(collection = "velib_init",db = "Velib")
 m      <- m$insert(my.data.stations)
+
 
 ```
 
@@ -36,6 +45,8 @@ Une remarque: il faut eviter les rbind dans les boucles. On s'en sort avec la fo
 # on crée d'abord une data frame complète que l'on insèrera entierement dans la collection en bulk
 
 files <- list.files(path="./data",pattern = "*.gz")
+files <- files[1:8]
+files <- files[c(1,3:8)]
 my.data.month <- vector("list",length(files))
 
 compteur  <- 0
@@ -54,8 +65,8 @@ for(j in 1:length(files)){
 my.data.per.month <- rbind(my.data.month[[1]][FALSE,], do.call(rbind, my.data.month)) # conversion en une unique data frame
 temps_fin<-timestamp()
 
-system.time(save(file = "DataHistoric5Months.Rdata",list = ls(all.names = TRUE)))
-system.time(write.csv(file = "DataHistoric5Months.csv",x = my.data.per.month))
+# system.time(save(file = "DataHistoric5Months.Rdata",list = ls(all.names = TRUE)))
+# system.time(write.csv(file = "DataHistoric5Months.csv",x = my.data.per.month))
 ```
 
 Ajout des minutes, heures, jours, mois, années de l'enregistrement
@@ -71,6 +82,7 @@ Ajout des minutes, heures, jours, mois, années de l'enregistrement
 
 ```{r}
 
+# my.data.per.month$date_txt   <- as.POSIXct(my.data.per.month$last_update/1000, origin="1970-01-01", tz="GMT")
 my.data.per.month$date_txt   <- as.POSIXct(my.data.per.month$last_update/1000, origin="1970-01-01", tz="GMT")
 my.data.per.month$minute     <- as.numeric(format(my.data.per.month$date_txt, "%M"))
 my.data.per.month$hour       <- as.numeric(format(my.data.per.month$date_txt, "%H"))
@@ -83,7 +95,8 @@ my.data.per.month$date       <- with(my.data.per.month,year*1e10+month_num*1e8+d
 tmp                          <- round(my.data.per.month$hour/3,0)*3
 tmp[tmp==24]                 <- 100
 my.data.per.month$date_synop <- with(my.data.per.month,year*1e10+month_num*1e8+day_num*1e6+tmp*1e4)
-system.time(save(file = "DataHistoric5Months.Rdata",list = ls(all.names = TRUE)))
+my.data.per.month$date_dark  <- round(my.data.per.month$last_update/1000/1800)*1800
+system.time(save(file = "DataHistoric7Months.Rdata",list = ls(all.names = TRUE)))
 ```
 
 
@@ -95,7 +108,7 @@ Le descriptif des données se trouve sur https://donneespubliques.meteofrance.fr
 J'ai téléchargé les données de Juillet à Decembre 2016.
 
 ```{r}
-files <- c("synop.201607.csv","synop.201608.csv","synop.201609.csv","synop.201610.csv","synop.201611.csv","synop.201612.csv")
+files <- c("synop.201611.csv","synop.201512.csv","synop.201601.csv","synop.201602.csv","synop.201603.csv","synop.201604.csv","synop.201605.csv","synop.201606.csv","synop.201607.csv","synop.201608.csv","synop.201609.csv","synop.201610.csv","synop.201611.csv","synop.201612.csv")
 my.data.meteo.month <- vector("list",length(files))
 for(j in 1:length(files)){
   inputFile           <- paste0("data/",files[j])         # nom du fichier
@@ -107,10 +120,139 @@ my.data.meteo <- my.data.meteo[my.data.meteo$numer_sta==07149,]
 system.time(save(file = "DataHistoricMeteoFrance.Rdata",list = c("my.data.meteo")))
 system.time(write.csv(file = "DataHistoricMeteoFrance.csv",x = my.data.meteo))
 
+my.fields <- names(my.data.meteo)
+for(i in 1:length(my.fields)){
+  print(paste0(my.fields[i]," : ",length(unique(my.data.meteo[,my.fields[i]]))))
+  # on enlève les champs qui ne portent pas d'information
+  if(length(unique(my.data.meteo[,my.fields[i]]))==1){
+    my.data.meteo[,my.fields[i]]<-NULL
+  }
+}
+
 
 ```
 
-### on associe la météo aux données historiques des stations
+### chargement des données météo historiques DrakSky
+
+```{r}
+m      <-mongo(collection = "weather",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+my.aggregate <- paste0('[
+   { "$unwind": "$latitude"},
+   { "$unwind": "$longitude"},
+   { "$unwind": "$timezone"},
+   { "$unwind": "$offset"},
+   { "$unwind": "$currently.time"},
+   { "$unwind": "$currently.summary"},
+   { "$unwind": "$currently.icon"},
+   { "$unwind": "$currently.precipIntensity"},
+   { "$unwind": "$currently.precipProbability"},
+   { "$unwind": "$currently.temperature"},
+   { "$unwind": "$currently.apparentTemperature"},
+   { "$unwind": "$currently.dewPoint"},
+   { "$unwind": "$currently.humidity"},
+   { "$unwind": "$currently.windSpeed"},
+   { "$unwind": "$currently.windBearing"},
+   { "$unwind": "$currently.visibility"},
+   { "$unwind": "$currently.cloudCover"},
+   { "$unwind": "$currently.pressure"},
+   { "$unwind": "$currently.ozone"},
+   { "$project" : {"_id": 0, "latitude" :  1,"longitude":1, "timezone":1,"offset":1,"currently.time":1,"currently.summary":1,
+"currently.icon":1,
+"currently.precipIntensity":1,
+"currently.precipProbability":1,
+"currently.temperature":1,
+"currently.apparentTemperature":1,
+"currently.dewPoint":1,
+"currently.humidity":1,
+"currently.windSpeed":1,
+"currently.windBearing":1,
+"currently.visibility":1,
+"currently.cloudCover":1,
+"currently.pressure":1,
+"currently.ozone":1}} 
+]') 
+
+my.aggregate <- paste0('[
+   { "$unwind": "$latitude"},
+   { "$unwind": "$longitude"},
+   { "$unwind": "$timezone"},
+   { "$unwind": "$offset"},
+   { "$unwind": "$currently.time"},
+   { "$unwind": "$currently.summary"},
+   { "$unwind": "$currently.icon"},
+   { "$unwind": "$currently.precipIntensity"},
+   { "$unwind": "$currently.precipProbability"},
+   { "$unwind": "$currently.temperature"},
+   { "$unwind": "$currently.apparentTemperature"},
+   { "$unwind": "$currently.dewPoint"},
+   { "$unwind": "$currently.humidity"},
+   { "$unwind": "$currently.windSpeed"},
+   { "$unwind": "$currently.windBearing"},
+   { "$unwind": "$currently.visibility"},
+   { "$unwind": "$currently.cloudCover"},
+   { "$project" : {"_id": 0, "latitude" :  1,"longitude":1, "timezone":1,"offset":1,"currently.time":1,"currently.summary":1,
+"currently.icon":1,
+"currently.precipIntensity":1,
+"currently.precipProbability":1,
+"currently.temperature":1,
+"currently.apparentTemperature":1,
+"currently.dewPoint":1,
+"currently.humidity":1,
+"currently.windSpeed":1,
+"currently.windBearing":1,
+"currently.visibility":1,
+"currently.cloudCover":1}} 
+]') 
+
+my.meteo.darksky <- m$aggregate(my.aggregate)
+nrow(unique(my.meteo.darksky$currently))
+my.meteo.darksky$currently$date_darksky <- round(my.meteo.darksky$currently$time/1800)*1800
+
+```
+
+### on associe la météo MeteoFrance & DarkSky aux données historiques des stations 
+
+```{r}
+
+require(mongolite)
+# m      <- mongo(collection = "velib",db = "Velib")
+m      <-mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+my.data.per.month$date_dark  <- round(my.data.per.month$last_update/1000/1800)*1800
+# on contruit un object json par station
+temps_debut<-timestamp()
+for(i in 1:nrow(my.data.stations)){
+  x       <- as.list(my.data.stations[i,])
+  x$position <- as.list(x$position)
+  x$loc <- as.list(x$loc)
+  x$loc$coordinates <- list(x$loc$coordinates[[1]][1],x$loc$coordinates[[1]][2])
+  serie   <- my.data.per.month[my.data.per.month$number==my.data.stations[i,"number"],]
+  serie   <- merge(serie,my.data.meteo,by.x="date_synop",by.y="date")
+  serie   <- merge(serie,my.meteo.darksky$currently,by.x="date_dark",by.y="date_darksky")
+  
+  months  <- unique(serie$month_num)
+  for(j in 1:length(months)){
+    x$serie <- serie[serie$month_num==months[j],]
+    x$month_num <- x$serie$month_num[1]
+    x$month <- x$serie$month[1]
+    x$year  <- x$serie$year[1]
+    json    <- jsonlite::toJSON(x,auto_unbox = TRUE)
+    output  <- m$insert(json)
+    cat("\r",i,"/",nrow(my.data.stations),x$month)
+  }
+}
+
+temps_fin<-timestamp()
+temps_fin<-timestamp()
+
+# création de l'index 2dsphere:
+m$index(add = '{"loc":"2dsphere"}')
+
+```
+
+
+
+
+### on associe la météo Meteo France (SYNOP) aux données historiques des stations 
 
 ```{r}
 
@@ -121,30 +263,27 @@ m      <- mongo(collection = "velib",db = "Velib")
 temps_debut<-timestamp()
 for(i in 1:nrow(my.data.stations)){
   x       <- as.list(my.data.stations[i,])
-  x       <- x[-which(names(x)=="loc")] # pas necessaire
+  x$position <- as.list(x$position)
+  x$loc <- as.list(x$loc)
+  x$loc$coordinates <- list(x$loc$coordinates[[1]][1],x$loc$coordinates[[1]][2])
   serie   <- my.data.per.month[my.data.per.month$number==my.data.stations[i,"number"],]
   serie   <- merge(serie,my.data.meteo,by.x="date_synop",by.y="date")
-  x$serie <- serie
-  json    <- jsonlite::toJSON(x,auto_unbox = TRUE)
-  output  <- m$insert(json)
-  output  <- m$update(query = paste0('{"number": ',my.data.stations$number[i],'}'),update = paste0('{"$set": {"loc.type" : "Point", "loc.coordinates" : [',my.data.stations[i,]$position$lng,',',my.data.stations[i,]$position$lat,']}}'))
-  cat("\r",i,"/",nrow(my.data.stations))
-
+  months  <- unique(serie$month_num)
+  for(j in 1:length(months)){
+    x$serie <- serie[serie$month_num==months[j],]
+    x$month_num <- x$serie$month_num[1]
+    x$month <- x$serie$month[1]
+    json    <- jsonlite::toJSON(x,auto_unbox = TRUE)
+    output  <- m$insert(json)
+    cat("\r",i,"/",nrow(my.data.stations),x$month)
+  }
 }
-
-# for(i in 950:nrow(my.data.stations)){
-#     output  <- m$update(query = paste0('{"number": ',my.data.stations$number[i],'}'),update = paste0('{"$set": {"loc.type" : "Point", "loc.coordinates" : [',my.data.stations[i,]$position$lng,',',my.data.stations[i,]$position$lat,']}}'))
-#     cat("\r",i," / ",nrow(my.data.stations))
-# 
-# }
 
 
 temps_fin<-timestamp()
 
-#
+# création de l'index 2dsphere
 m$index(add = '{"loc":"2dsphere"}')
-
-
 
 ```
 
@@ -198,26 +337,28 @@ my.coordinates <- as.data.frame(geocode(address))
 x<-paste0('{ "loc" : { "$near" : { "$geometry" :  { "type" : "Point" , "coordinates" : [ ',my.coordinates$lon, ' , ', my.coordinates$lat,'] } ,  "$maxDistance" : ',max_distance,'}}}')
 require(mongolite)
 # m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
-m      <- mongo(collection = "velib",db = "Velib")
+# m      <- mongo(collection = "velibWdark",db = "Velib")
 
-
+temp <- m$find(x)
+temp <- (temp$number)
 # geoNear permet de requêter suivant l'index 2dsphere avec aggregation (https://docs.mongodb.com/v3.2/reference/operator/aggregation/geoNear/)
 my.aggregate <- paste0('[
    {"$geoNear" : {
         "near": { "type": "Point", "coordinates": [',my.coordinates$lon, ' , ', my.coordinates$lat,'] },
-        "distanceField": "distance",
+        "distanceField": "dist.calculated",
         "maxDistance": ',max_distance,',
-        "includeLocs": "location",
+        "includeLocs": "dist.location",
+        "query":{"month_num":8},
         "num" : ',nb_stations_max,',
         "spherical": true
      }
    },
    { "$unwind": "$serie"},
-   { "$match" : {"serie.day" : "',jour,'"}},
+   { "$match" : {"serie.day" : "',jour,'","serie.month_num": 8}},
    { "$project" : {"_id": 0, "number": 1, "serie.hour" : 1, "serie.available_bikes":1 , "serie.available_bike_stands":1, "distance":1, "location":1}} 
 ]') 
 
-m      <- mongo(collection = "velib",db = "Velib")
+#m      <- mongo(collection = "velib",db = "Velib")
 output2 <- m$aggregate(my.aggregate)
 unique(output2$number)
 m      <-mongo(collection = "velib",  url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
