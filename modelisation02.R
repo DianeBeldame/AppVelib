@@ -52,7 +52,7 @@ auc           <- roc(test$bike_dispo,pred_rf[,2])
 plot(auc,ylim=c(0,1),print.thres=TRUE,main=paste('AUC',round(auc$auc[[1]],2)))
 result.coords <- coords(auc, "best", best.method="closest.topleft", ret=c("threshold", "accuracy"))
 print(result.coords)
-mat_conf2      <- table(test[,1],pred_rf[,2]>result.coords["threshold"])
+mat_conf2     <- table(test[,1],pred_rf[,2]>result.coords["threshold"])
 
 ###########modele pour les nbr de velib##########
 ggplot(data=data_velib, aes(available_bikes)) + geom_bar()
