@@ -94,10 +94,43 @@ server <- function(input, output) {
   # on effectue les requêtes pour l'affichage des stations
   rv <- reactiveValues()
   
+  rv$liste_stations_proches_depart  <- GetStationList(m,"8 boulevard saint michel, paris")
+  rv$liste_stations_proches_arrivee  <- GetStationList(m,"4 boulevard magenta, paris")
+  rv$donnees_depart                 <- My.Single.Query(m,
+                                                       address      = "8 boulevard saint michel, paris",
+                                                       hour         = 0:24,
+                                                       day          = c(weekdays(as.Date("2016/10/13"), abbreviate = FALSE),
+                                                                        weekdays(as.Date("2016/10/13")+1, abbreviate = FALSE)),
+                                                       date_start   = "2016/07/01",
+                                                       date_end     = "2016/12/31",
+                                                       max_distance = 200)
+  rv$donnees_arrivee               <- My.Single.Query(m,
+                                                      address      = "4 boulevard magenta, paris",
+                                                      hour         = 0:24,
+                                                      day          = c(weekdays(as.Date("2016/10/13"), abbreviate = FALSE),
+                                                                       weekdays(as.Date("2016/10/13")+1, abbreviate = FALSE)),
+                                                      date_start   = "2016/07/01",
+                                                      date_end     = "2016/12/31",
+                                                      max_distance = 200)
+  
+  rv$resultat_modelisation_depart <- {
+    temp             <- GetStationList(m,"8 boulevard saint michel, paris")
+    temp$color_level <- 0
+    temp$value       <- 0
+    list(summary = temp, type="binomial")
+  }
+  
+  rv$resultat_modelisation_arrivee <- {
+    temp             <- GetStationList(m,"4 boulevard magenta, paris")
+    temp$color_level <- 0
+    temp$value       <- 0
+    list(summary = temp, type="binomial")
+  }
+  
   observeEvent(input$update_depart,{
     print("MAJ : liste_stations_proches_depart")
     rv$liste_stations_proches_depart  <- GetStationList(m,input$adresse_depart)
-    
+
     print("MAJ : donnees_depart")
     rv$donnees_depart                 <- My.Single.Query(m,
                                                          address      = input$adresse_depart,
@@ -113,8 +146,7 @@ server <- function(input, output) {
       temp$value       <- 0
       list(summary = temp, type="binomial")
     }
-    
-    })
+     })
     
   observeEvent(input$update_arrivee,{
     print("MAJ : liste_stations_proches_arrivee")
