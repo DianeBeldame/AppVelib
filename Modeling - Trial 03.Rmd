@@ -28,8 +28,6 @@ m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mon
 output_target_hour            <- My.Single.Query(m,address = address,hour = 0:24,day=weekday,date_start = "2016/10/01",date_end = "2016/12/01",max_distance = 2000)
 length(unique(output_target_hour$number))
 # output_target_hour$dateday    <- apply( output_target_hour[ , c("month_num","day_num") ] , 1 , paste , "2016",collapse = "/")
-output_target_hour$dateday    <- as.factor(2016*10000 + as.numeric(levels(output_target_hour$month_num))[output_target_hour$month_num] *100 + as.numeric(levels(output_target_hour$day_num))[output_target_hour$day_num] )
-output_target_hour$summary<- as.factor(output_target_hour$summary)
 
 require(ggplot2)
 ggplot(output_target_hour)+aes(x=hour+minute/60,y=available_bike_stands,color=dateday)+geom_line(lwd=1)+facet_wrap(~number,nrow=2)+ggtitle(label = "available_bike_stands")
