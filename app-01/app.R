@@ -18,7 +18,6 @@ GetStationList <- function(m,addresse){
   #                       }')
   # output             <- unique(m$find(x))
   output             <- My.Single.Query.WithoutSerie(m,address    = addresse)
-  output$proba <- runif(nrow(output))
   return(output)
 }
 
@@ -28,7 +27,7 @@ ComputeColor <- function(proba){
   R[is.na(proba)] <- 0
   G[is.na(proba)] <- 0
   COL <- rgb(R, G, 0)
-  print(COL)
+  # print(COL)
   return(COL)
 }
 
@@ -55,24 +54,27 @@ ui <- navbarPage(title = "VelibQuatuor App",
                           fluidRow(
                             column(4,
                                    wellPanel(title = "Date & heure du jour pour une simulation",
-                                    dateInput(inputId = "date_du_jour",label = "Date du jour"),
-                                    numericInput(inputId = "heure_du_jour",label = "heure du jour",min = 0,max = 23,step = 1,value = 12)
+                                    dateInput(inputId = "date_du_jour",label = "Date du jour",value = as.Date("2016/10/13")),
+                                    numericInput(inputId = "heure_du_jour",label = "heure du jour",min = 0,max = 23,step = 1,value = 8)
                                     ),
                                    wellPanel(title = "Prevision",
-                                    numericInput(inputId = "à heure +",label = "prévision à : ",min = 1,max = 24,step = 1,value = 3)
+                                    numericInput(inputId = "prevision",label = "prévision à : ",min = 1,max = 24,step = 1,value = 20)
                                    ),
-                                   actionButton(inputId = "compute", label = "lance le calcule")
+                                   actionButton(inputId = "compute", label = "lance le calcul")
                                    ),
-                            column(4,
+                            column(8,
                                    plotOutput(outputId = "plotStationDepart01"),
-                                   plotOutput(outputId = "plotModelDepart")
-                                  ),
-                            column(4,
-                                   plotOutput(outputId = "plotStationArrivee01"),
+                                   plotOutput(outputId = "plotStationArrivee01")
+                                   )
+                            ),
+                          fluidRow(    
+                            column(4),
+                            column(8,
+                                   plotOutput(outputId = "plotModelDepart"),
                                    plotOutput(outputId = "plotModelArrivee")
                                   )
-                          )
-                 ),
+                          ))
+                 ,
                  navbarMenu(title = "Data Explore",
                             tabPanel(title = "One Station One Week Day"
                             ),
@@ -91,59 +93,101 @@ server <- function(input, output) {
   
   # on effectue les requêtes pour l'affichage des stations
   rv <- reactiveValues()
-    rv$liste_stations_proches_depart  <- GetStationList(m,"8 boulevard saint michel, Paris")
-    rv$liste_stations_proches_arrivee <- GetStationList(m,"4, boulevard magenta, Paris")
-    rv$donnees_depart                 <- NULL
-    rv$donnees_arrivee                <- NULL
-    rv$resultat_modelisation          <- NULL
+  
+  observeEvent(input$update_depart,{
+    print("MAJ : liste_stations_proches_depart")
+    rv$liste_stations_proches_depart  <- GetStationList(m,input$adresse_depart)
     
-
-  # mise à jour des données géographique du modèle lorsque l'on clique sur le bouton refresh
-  observeEvent(input$update_depart, {
-              rv$liste_stations_proches_depart  <- GetStationList(m,input$adresse_depart)})
-  observeEvent(input$update_arrivee, {
-              rv$liste_stations_proches_arrivee <- GetStationList(m,input$adresse_arrivee)
+    print("MAJ : donnees_depart")
+    rv$donnees_depart                 <- My.Single.Query(m,
+                                                         address      = input$adresse_depart,
+                                                         hour         = 0:24,
+                                                         day          = c(weekdays(input$date_du_jour, abbreviate = FALSE),
+                                                                          weekdays(input$date_du_jour+1, abbreviate = FALSE)),
+                                                         date_start   = "2016/07/01",
+                                                         date_end     = "2016/12/31",
+                                                         max_distance = 200)
+    rv$resultat_modelisation_depart <- {
+      temp             <- rv$liste_stations_proches_depart
+      temp$color_level <- 0
+      temp$value       <- 0
+      list(summary = temp, type="binomial")
+    }
+    
+    })
+    
+  observeEvent(input$update_arrivee,{
+    print("MAJ : liste_stations_proches_arrivee")
+    rv$liste_stations_proches_arrivee <- GetStationList(m,input$adresse_arrivee)
+    print("MAJ : donnees_arrivee")
+    rv$donnees_arrivee               <- My.Single.Query(m,
+                                                      address      = input$adresse_arrivee,
+                                                      hour         = 0:24,
+                                                      day          = c(weekdays(input$date_du_jour, abbreviate = FALSE),
+                                                                       weekdays(input$date_du_jour+1, abbreviate = FALSE)),
+                                                      date_start   = "2016/07/01",
+                                                      date_end     = "2016/12/31",
+                                                      max_distance = 200)
+    rv$resultat_modelisation_arrivee <- {
+      temp             <- rv$liste_stations_proches_arrivee
+      temp$color_level <- 0
+      temp$value       <- 0
+      list(summary = temp, type="binomial")
+    }
+    
+    })
+  
+  # on lance le calcul qui va mettre à jour les données lorsque l'on clique sur calcul
+  observeEvent(input$compute,{
+    print("MAJ : resultat_modelisation_depart")
+    rv$resultat_modelisation_depart <- My.Model.01(rv$donnees_depart,rv$liste_stations_proches_depart,input$date_du_jour,input$heure_du_jour,input$prevision,"bikes")
   })
   
+  observeEvent(input$compute,{
+    print("MAJ : resultat_modelisation_arrivee")
+     rv$resultat_modelisation_arrivee <- My.Model.01(rv$donnees_arrivee,rv$liste_stations_proches_arrivee,input$date_du_jour,input$heure_du_jour,input$prevision,"stands")
+  })  
+
   # affichage des map des stations de depart et d'arrivee
   output$geocode_depart <- renderLeaflet({
-    res   <- rv$liste_stations_proches_depart
-    lamap <- leaflet() %>%
-      addTiles() %>%  
-      addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(as.character(round(res$proba*100,1)),"%"),color = ComputeColor(res$proba))
+    print("MAJ: geocode_depart")
+    res         <- rv$resultat_modelisation_depart$summary
+    model_type  <- rv$resultat_modelisation_depart$type
+    if(model_type=="binomial"){
+      # on affiche des pourcentages dans les popups
+      lamap <- leaflet() %>%
+        addTiles() %>%
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
+    }else{
+      # on affiche des nombres dans les popups
+      lamap <- leaflet() %>%
+        addTiles() %>%  
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = res$value,color = ComputeColor(res$color_level))
+    }
   })
+  
   output$geocode_arrivee <- renderLeaflet({
-    res   <- rv$liste_stations_proches_arrivee
-    lamap <- leaflet() %>%
-      addTiles() %>%  
-      addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(as.character(round(res$proba*100,1)),"%"),color = ComputeColor(res$proba))
+    print("MAJ: geocode_arrivee")
+    res         <- rv$resultat_modelisation_arrivee$summary
+    model_type  <- rv$resultat_modelisation_arrivee$type
+    if(model_type=="binomial"){
+      # on affiche des pourcentages dans les popups
+      lamap <- leaflet() %>%
+        addTiles() %>%
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
+    }else{
+      # on affiche des nombres dans les popups
+      lamap <- leaflet() %>%
+        addTiles() %>%  
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = res$value,color = ComputeColor(res$color_level))
+    }
+    
   })  
   
-  # mise à jour des données utiles pour le modèle lorsque l'on clique sur le bouton refresh
-  observeEvent(input$update_depart, {
-              rv$donnees_depart                <- My.Single.Query(m,
-                                                                  address      = input$adresse_depart,
-                                                                  hour         = 0:24,
-                                                                  day          = c(weekdays(input$date_du_jour, abbreviate = FALSE),
-                                                                                   weekdays(input$date_du_jour+1, abbreviate = FALSE)),
-                                                                  date_start   = "2016/07/01",
-                                                                  date_end     = "2016/12/31",
-                                                                  max_distance = 200)
-              })
-
-  observeEvent(input$update_arrivee, {
-              rv$donnees_arrivee               <- My.Single.Query(m,
-                                                                  address      = input$adresse_arrivee,
-                                                                  hour         = 0:24,
-                                                                  day          = c(weekdays(input$date_du_jour, abbreviate = FALSE),
-                                                                                   weekdays(input$date_du_jour+1, abbreviate = FALSE)),
-                                                                  date_start   = "2016/07/01",
-                                                                  date_end     = "2016/12/31",
-                                                                  max_distance = 200)
-  })
-
+ 
  # affichage des données requêtées
  output$plotStationDepart01 <- renderPlot({
+   print("MAJ: plotStationDepart01")
    station_number <- rv$liste_stations_proches_depart$number[1]
    if (!is.null(rv$donnees_depart))
       ggplot(subset(rv$donnees_depart,number==station_number))+aes(x=time,y=available_bikes,color=summary)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "Velibs disponibles à la station la plus proche")
@@ -152,12 +196,32 @@ server <- function(input, output) {
  
 
   output$plotStationArrivee01 <- renderPlot({
+    print("MAJ: plotStationArrivee01")    
     station_number <- rv$liste_stations_proches_arrivee$number[1]
     if (!is.null(rv$donnees_arrivee))
       ggplot(subset(rv$donnees_arrivee,number==station_number))+aes(x=time,y=available_bike_stands,color=summary)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "places disponibles à la station la plus proche")
   })  
 
+
   
+  # # # on affiche la comparaison model mesure
+  output$plotModelArrivee <- renderPlot(expr = {
+    print("MAJ : plotModelArrivee")
+    if (!is.null(rv$resultat_modelisation_arrivee$data)){
+      # uniquement s'il y a des données a tracer
+      ggplot(rv$resultat_modelisation_arrivee$data[[1]]$data)+aes(x=time,y=fit,color=fit_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "comparaison données et fit")
+    }
+  })
+  
+  output$plotModelDepart <- renderPlot(expr = {
+    print("MAJ : plotModelDepart")
+    if (!is.null(rv$resultat_modelisation_depart$data)){
+      # uniquement s'il y a des données a tracer
+     ggplot(rv$resultat_modelisation_depart$data[[1]]$data)+aes(x=time,y=fit,color=fit_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "comparaison données et fit")
+    }
+  })
+
+
   
 }
 
