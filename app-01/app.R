@@ -60,7 +60,9 @@ ui <- navbarPage(title = "VelibQuatuor App",
                                    wellPanel(title = "Prevision",
                                     numericInput(inputId = "prevision",label = "prévision à : ",min = 1,max = 24,step = 1,value = 20)
                                    ),
-                                   actionButton(inputId = "compute", label = "lance le calcul")
+                                   actionButton(inputId = "compute", label = "lance le calcul"),
+                                   uiOutput(outputId = "selectStationDepart"),
+                                   uiOutput(outputId = "selectStationArrivee")
                                    ),
                             column(8,
                                    plotOutput(outputId = "plotStationDepart01"),
@@ -94,8 +96,10 @@ server <- function(input, output) {
   # on effectue les requêtes pour l'affichage des stations
   rv <- reactiveValues()
   
-  rv$liste_stations_proches_depart  <- GetStationList(m,"8 boulevard saint michel, paris")
-  rv$liste_stations_proches_arrivee  <- GetStationList(m,"4 boulevard magenta, paris")
+  temp_depart  <- GetStationList(m,"8 boulevard saint michel, paris")
+  temp_arrivee <- GetStationList(m,"4 boulevard magenta, paris")
+  rv$liste_stations_proches_depart  <- temp_depart
+  rv$liste_stations_proches_arrivee <- temp_arrivee
   rv$donnees_depart                 <- My.Single.Query(m,
                                                        address      = "8 boulevard saint michel, paris",
                                                        hour         = 0:24,
@@ -114,14 +118,14 @@ server <- function(input, output) {
                                                       max_distance = 200)
   
   rv$resultat_modelisation_depart <- {
-    temp             <- GetStationList(m,"8 boulevard saint michel, paris")
+    temp             <- temp_depart
     temp$color_level <- 0
     temp$value       <- 0
     list(summary = temp, type="binomial")
   }
   
   rv$resultat_modelisation_arrivee <- {
-    temp             <- GetStationList(m,"4 boulevard magenta, paris")
+    temp             <- temp_arrivee
     temp$color_level <- 0
     temp$value       <- 0
     list(summary = temp, type="binomial")
@@ -169,6 +173,14 @@ server <- function(input, output) {
     
     })
   
+  #choix des stations à afficher
+  output$selectStationDepart <- renderUI({
+    selectInput(inputId = "stationDepart",label = "Station au départ à afficher",choices = rv$liste_stations_proches_depart$number)
+  })
+  output$selectStationArrivee <- renderUI({
+    selectInput(inputId = "stationArrivee",label = "Station à l'arrivée à afficher",choices = rv$liste_stations_proches_arrivee$number)
+  })
+  
   # on lance le calcul qui va mettre à jour les données lorsque l'on clique sur calcul
   observeEvent(input$compute,{
     print("MAJ : resultat_modelisation_depart")
@@ -189,12 +201,12 @@ server <- function(input, output) {
       # on affiche des pourcentages dans les popups
       lamap <- leaflet() %>%
         addTiles() %>%
-        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(res$number," : ",as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
     }else{
       # on affiche des nombres dans les popups
       lamap <- leaflet() %>%
         addTiles() %>%  
-        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = res$value,color = ComputeColor(res$color_level))
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(res$number," : ",res$value),color = ComputeColor(res$color_level))
     }
   })
   
@@ -206,12 +218,12 @@ server <- function(input, output) {
       # on affiche des pourcentages dans les popups
       lamap <- leaflet() %>%
         addTiles() %>%
-        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(res$number," : ",as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
     }else{
       # on affiche des nombres dans les popups
       lamap <- leaflet() %>%
         addTiles() %>%  
-        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = res$value,color = ComputeColor(res$color_level))
+        addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(res$number," : ",res$value),color = ComputeColor(res$color_level))
     }
     
   })  
@@ -220,18 +232,26 @@ server <- function(input, output) {
  # affichage des données requêtées
  output$plotStationDepart01 <- renderPlot({
    print("MAJ: plotStationDepart01")
-   station_number <- rv$liste_stations_proches_depart$number[1]
+   station_number <- input$stationDepart
+   if(is.null(station_number)){
+    station_number <- rv$liste_stations_proches_depart$number[1]
+   }
    if (!is.null(rv$donnees_depart))
-      ggplot(subset(rv$donnees_depart,number==station_number))+aes(x=time,y=available_bikes,color=summary)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "Velibs disponibles à la station la plus proche")
+      ggplot(subset(rv$donnees_depart,number==station_number))+aes(x=time,y=available_bikes,color=summary)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = paste0("Velibs disponibles à la station ",station_number))
    })  
 
  
 
   output$plotStationArrivee01 <- renderPlot({
     print("MAJ: plotStationArrivee01")    
-    station_number <- rv$liste_stations_proches_arrivee$number[1]
+    
+    station_number <- input$stationArrivee
+    if(is.null(station_number)){
+      station_number <- rv$liste_stations_proches_arrivee$number[1]
+    }
+    
     if (!is.null(rv$donnees_arrivee))
-      ggplot(subset(rv$donnees_arrivee,number==station_number))+aes(x=time,y=available_bike_stands,color=summary)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "places disponibles à la station la plus proche")
+      ggplot(subset(rv$donnees_arrivee,number==station_number))+aes(x=time,y=available_bike_stands,color=summary)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = paste0("places disponibles à la station ",station_number))
   })  
 
 
@@ -239,17 +259,28 @@ server <- function(input, output) {
   # # # on affiche la comparaison model mesure
   output$plotModelArrivee <- renderPlot(expr = {
     print("MAJ : plotModelArrivee")
+    station_number <- input$stationArrivee
+    if(is.null(station_number)){
+      station_number <- rv$liste_stations_proches_arrivee$number[1]
+    }
+    i <- which(rv$liste_stations_proches_arrivee$number==station_number)
+    
     if (!is.null(rv$resultat_modelisation_arrivee$data)){
       # uniquement s'il y a des données a tracer
-      ggplot(rv$resultat_modelisation_arrivee$data[[1]]$data)+aes(x=time,y=fit,color=fit_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "comparaison données et fit")
+      ggplot(rv$resultat_modelisation_arrivee$data[[i]]$data)+aes(x=time,y=fit,color=fit_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = paste0("comparaison données et fit station ",station_number))
     }
   })
   
   output$plotModelDepart <- renderPlot(expr = {
     print("MAJ : plotModelDepart")
+    station_number <- input$stationDepart
+    if(is.null(station_number)){
+      station_number <- rv$liste_stations_proches_depart$number[1]
+    }
+    i <- which(rv$liste_stations_proches_depart$number==station_number)
     if (!is.null(rv$resultat_modelisation_depart$data)){
       # uniquement s'il y a des données a tracer
-     ggplot(rv$resultat_modelisation_depart$data[[1]]$data)+aes(x=time,y=fit,color=fit_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = "comparaison données et fit")
+     ggplot(rv$resultat_modelisation_depart$data[[i]]$data)+aes(x=time,y=fit,color=fit_type)+geom_point(lwd=1)+facet_wrap(~dateday,nrow=3)+ggtitle(label = paste0("comparaison données et fit station ",station_number))
     }
   })
 
