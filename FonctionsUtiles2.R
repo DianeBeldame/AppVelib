@@ -246,7 +246,8 @@ My.Model.01 <- function(my.data.set.input,liste_stations,today_date,today_hour,p
   # on construit un modele pour chaque station, indépendemment les unes des autres
     # on prepare la liste qui contiendra les resultats
   res <- vector("list", nrow(liste_stations))
-  proba <- vector(length = nrow(liste_stations))
+  value <- vector(length = nrow(liste_stations))
+  value_norm<- vector(length = nrow(liste_stations))
   for(i in 1:nrow(liste_stations)){
   
     # on selectionne les données correspondant a la i-ieme station mais uniquement les données antérieur à maintenant (today_date + today_hour)
@@ -285,26 +286,48 @@ My.Model.01 <- function(my.data.set.input,liste_stations,today_date,today_hour,p
     switch(target_type,
            stands = {
              # on veut modaliser la probabilité de trouver un velib (on estime qu'il faut qu'il y en ai au moins 4)
-             my.data$stand_dispo                                                           <- 0
-             my.data$stand_dispo[my.data$available_bike_stands>available_stands_threshold] <- 1
-             my.data$stand_dispo                                                           <- factor(my.data$stand_dispo)
+             switch(type_model,
+                    binomial={
+                     my.data$stand_dispo                                                           <- 0
+                     my.data$stand_dispo[my.data$available_bike_stands>available_stands_threshold] <- 1
+                     my.data$stand_dispo                                                           <- factor(my.data$stand_dispo)
+                    },
+                    poisson={
+                      my.data$stand_dispo                                                           <- my.data$available_bike_stands
+                    })
+             
              my.data$hour                                                                  <- factor(my.data$hour)
              
              # on crée un ensemble de test et un ensemble d'apprentissage
              # on constitue un ensemble de test équilibré pour faciliter l'estimation de la performance du modèle
              my.data.pre                <- subset(my.data,as.numeric(as.character(dateday))*100+as.numeric(hour)<=today_date_num*100+today_hour)
              my.data.post               <- subset(my.data,as.numeric(as.character(dateday))*100+as.numeric(hour)>today_date_num*100+today_hour)
-             ind_stand_dispo            <- which(my.data.pre$stand_dispo==1)
-             ind_stand_nondispo         <- which(my.data.pre$stand_dispo==0)
-             ind_1                      <- sample(ind_stand_dispo, length(ind_stand_dispo)/2)
-             ind_0                      <- sample(ind_stand_nondispo, length(ind_stand_nondispo)/2)
-             my.data.test               <- my.data.pre[c(ind_1,ind_0),]
-             my.data.training           <- my.data.pre[-c(ind_1,ind_0),]
              
-             # on enleve les données postérieur à la date d'aujourd'hui
+             switch(type_model,
+                    binomial={
+                       ind_stand_dispo            <- which(my.data.pre$stand_dispo==1)
+                       ind_stand_nondispo         <- which(my.data.pre$stand_dispo==0)
+                       ind_1                      <- sample(ind_stand_dispo, length(ind_stand_dispo)/2)
+                       ind_0                      <- sample(ind_stand_nondispo, length(ind_stand_nondispo)/2)
+                       my.data.test               <- my.data.pre[c(ind_1,ind_0),]
+                       my.data.training           <- my.data.pre[-c(ind_1,ind_0),]
+                       table(my.data.test$stand_dispo)
+                       table(my.data.training$stand_dispo)
+                       
+                    },
+                    poisson={
+                       min_val <- min(my.data.pre$stand_dispo)  
+                       max_val <- max(my.data.pre$stand_dispo)  
+                       ind_stand_dispo            <- which(my.data.pre$stand_dispo>0.5*(min_val+max_val))
+                       ind_stand_nondispo         <- which(my.data.pre$stand_dispo<=0.5*(min_val+max_val))
+                       ind_1                      <- sample(ind_stand_dispo, length(ind_stand_dispo)/2)
+                       ind_0                      <- sample(ind_stand_nondispo, length(ind_stand_nondispo)/2)
+                       my.data.test               <- my.data.pre[c(ind_1,ind_0),]
+                       my.data.training           <- my.data.pre[-c(ind_1,ind_0),]
+             })
              
-             table(my.data.test$stand_dispo)
-             table(my.data.training$stand_dispo)
+
+             
              
              # on applique une première modélisation
              
@@ -317,26 +340,50 @@ My.Model.01 <- function(my.data.set.input,liste_stations,today_date,today_hour,p
            },
            bikes={
             # on veut modaliser la probabilité de trouver un velib (on estime qu'il faut qu'il y en ai au moins 4)
-            my.data$bike_dispo                                                    <- 0
-            my.data$bike_dispo[my.data$available_bikes>available_bikes_threshold] <- 1
-            my.data$bike_dispo                                                    <- factor(my.data$bike_dispo)
             my.data$hour                                                          <- factor(my.data$hour)
+            switch(type_model,
+                   binomial={
+                     my.data$bike_dispo                                                    <- 0
+                     my.data$bike_dispo[my.data$available_bikes>available_bikes_threshold] <- 1
+                     my.data$bike_dispo                                                    <- factor(my.data$bike_dispo)
+                   },
+                   poisson={
+                     my.data$bike_dispo                                                    <- my.data$available_bikes
+                   })
+            
+            my.data$hour                                                                  <- factor(my.data$hour)
             
             # on crée un ensemble de test et un ensemble d'apprentissage
             # on constitue un ensemble de test équilibré pour faciliter l'estimation de la performance du modèle
             my.data.pre                <- subset(my.data,as.numeric(as.character(dateday))*100+as.numeric(hour)<=today_date_num*100+today_hour)
             my.data.post               <- subset(my.data,as.numeric(as.character(dateday))*100+as.numeric(hour)>today_date_num*100+today_hour)
-            ind_bike_dispo             <- which(my.data.pre$bike_dispo==1)
-            ind_bike_nondispo          <- which(my.data.pre$bike_dispo==0)
-            ind_1                      <- sample(ind_bike_dispo, length(ind_bike_dispo)/2)
-            ind_0                      <- sample(ind_bike_nondispo, length(ind_bike_nondispo)/2)
-            my.data.test               <- my.data.pre[c(ind_1,ind_0),]
-            my.data.training           <- my.data.pre[-c(ind_1,ind_0),]
-            
-            # on enleve les données postérieur à la date d'aujourd'hui
 
-            table(my.data.test$bike_dispo)
-            table(my.data.training$bike_dispo)
+
+            switch(type_model,
+                   binomial={
+                     ind_bike_dispo             <- which(my.data.pre$bike_dispo==1)
+                     ind_bike_nondispo          <- which(my.data.pre$bike_dispo==0)
+                     ind_1                      <- sample(ind_bike_dispo, length(ind_bike_dispo)/2)
+                     ind_0                      <- sample(ind_bike_nondispo, length(ind_bike_nondispo)/2)
+                     my.data.test               <- my.data.pre[c(ind_1,ind_0),]
+                     my.data.training           <- my.data.pre[-c(ind_1,ind_0),]
+                     table(my.data.test$bike_dispo)
+                     table(my.data.training$bike_dispo)
+                     
+                     },
+                   poisson={
+                     min_val                    <- min(my.data.pre$bike_dispo)  
+                     max_val                    <- max(my.data.pre$bike_dispo)  
+                     ind_bike_dispo             <- which(my.data.pre$bike_dispo>0.5*(min_val+max_val))
+                     ind_bike_nondispo          <- which(my.data.pre$bike_dispo<=0.5*(min_val+max_val))
+                     ind_1                      <- sample(ind_bike_dispo, length(ind_bike_dispo)/2)
+                     ind_0                      <- sample(ind_bike_nondispo, length(ind_bike_nondispo)/2)
+                     my.data.test               <- my.data.pre[c(ind_1,ind_0),]
+                     my.data.training           <- my.data.pre[-c(ind_1,ind_0),]
+                   })
+            
+
+
             
             # on applique une première modélisation
             
@@ -351,7 +398,13 @@ My.Model.01 <- function(my.data.set.input,liste_stations,today_date,today_hour,p
     ## Reorder variables
     require(bestglm)
     lbw.for.bestglm <-lbw.for.bestglm[, c("precipIntensity","apparentTemperature","humidity","visibility","available_bike_stands_current","available_bikes_current","bike_stands_weekbefore","available_bike_stands_weekbefore","available_bikes_weekbefore","y")]
-    res.bestglm     <- bestglm(Xy = lbw.for.bestglm, family = binomial,IC = "BIC",method = "exhaustive")
+    switch(type_model,
+           binomial={
+              res.bestglm     <- bestglm(Xy = lbw.for.bestglm, family = binomial,IC = "BIC",method = "exhaustive")
+           },
+           poisson={
+             res.bestglm     <- bestglm(Xy = lbw.for.bestglm, family = poisson,IC = "BIC",method = "exhaustive")
+           })
     my.reg          <- res.bestglm$BestModel
 
     my.data.training$fit      <- predict(object = my.reg,newdata = my.data.training,type = "response")
@@ -367,20 +420,38 @@ My.Model.01 <- function(my.data.set.input,liste_stations,today_date,today_hour,p
     resultat        <- list(
                           model = my.reg,
                           data  = rbind(my.data,my.data.training,my.data.test,my.data.post),
-                          proba = mean(my.data.post$fit[my.data.post$key==prevision_date_num])
+                          value = mean(my.data.post$fit[my.data.post$key==prevision_date_num])
                         )
+    if(type_model=="poisson"){
+      resultat$data$fit[resultat$data$fit>max_val] <- max_val
+      resultat$data$fit[resultat$data$fit<0] <- 0
+    }
     
     res[[i]]          <- resultat
-    proba[i]          <- resultat$proba
+    value[i]          <- resultat$value
+    switch(type_model,
+           binomial={value_norm[i]<- resultat$value},
+           poisson ={
+             switch(target_type,
+                    bikes={
+                      value_norm[i]<- resultat$value/available_bikes_threshold
+                    },
+                    stands={
+                      value_norm[i]<- resultat$value/available_stands_threshold
+                    })
+             value[i] <- round(value[i],0)
+           })
+    
     
   }
-  
+  value_norm[value_norm>1] <- 1
   summary             <- liste_stations
-  summary$color_level <- proba
-  summary$value       <- proba
+  summary$color_level <- value_norm
+  summary$value       <- value
   
   return(list(summary = summary, type = type_model,data = res))
   
 
   
 }
+

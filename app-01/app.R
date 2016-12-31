@@ -60,6 +60,9 @@ ui <- navbarPage(title = "VelibQuatuor App",
                                    wellPanel(title = "Prevision",
                                     numericInput(inputId = "prevision",label = "prévision à : ",min = 1,max = 24,step = 1,value = 20)
                                    ),
+                                   selectInput(inputId = "selectModel",label = "choix du modèle",choices = c("Model01","Model02","Model03")),
+                                   numericInput(inputId = "thresholdBikes",label = "Seuil nombre de vélib ",min = 1,max = 10,step = 1,value = 5),
+                                   numericInput(inputId = "thresholdStands",label = "Seuil nombre de place ",min = 1,max = 10,step = 1,value = 5),
                                    actionButton(inputId = "compute", label = "lance le calcul"),
                                    uiOutput(outputId = "selectStationDepart"),
                                    uiOutput(outputId = "selectStationArrivee")
@@ -184,12 +187,36 @@ server <- function(input, output) {
   # on lance le calcul qui va mettre à jour les données lorsque l'on clique sur calcul
   observeEvent(input$compute,{
     print("MAJ : resultat_modelisation_depart")
-    rv$resultat_modelisation_depart <- My.Model.01(rv$donnees_depart,rv$liste_stations_proches_depart,input$date_du_jour,input$heure_du_jour,input$prevision,"bikes")
+    switch(input$selectModel,
+           Model01={
+              rv$resultat_modelisation_depart <- My.Model.01(rv$donnees_depart,rv$liste_stations_proches_depart,
+                                                             input$date_du_jour,input$heure_du_jour,input$prevision,"bikes",type_model="binomial",
+                                                             available_bikes_threshold=input$thresholdBikes)
+           },
+           Model02={
+              rv$resultat_modelisation_depart <- My.Model.01(rv$donnees_depart,rv$liste_stations_proches_depart,input$date_du_jour,input$heure_du_jour,input$prevision,"bikes",type_model="poisson",
+                                                             available_bikes_threshold=input$thresholdBikes)
+           },
+           Model03={
+             # ajoutez votre modèle ici
+           })
+           
   })
   
   observeEvent(input$compute,{
     print("MAJ : resultat_modelisation_arrivee")
-     rv$resultat_modelisation_arrivee <- My.Model.01(rv$donnees_arrivee,rv$liste_stations_proches_arrivee,input$date_du_jour,input$heure_du_jour,input$prevision,"stands")
+    switch(input$selectModel,
+           Model01={
+              rv$resultat_modelisation_arrivee <- My.Model.01(rv$donnees_arrivee,rv$liste_stations_proches_arrivee,input$date_du_jour,input$heure_du_jour,input$prevision,"stands",type_model="binomial",
+                                                              available_stands_threshold=input$thresholdStands)
+           },
+           Model02={
+             rv$resultat_modelisation_arrivee <- My.Model.01(rv$donnees_arrivee,rv$liste_stations_proches_arrivee,input$date_du_jour,input$heure_du_jour,input$prevision,"stands",type_model="poisson",
+                                                             available_stands_threshold=input$thresholdStands)
+           },
+           Model03={
+             # ajoutez votre modèle ici
+           })
   })  
 
   # affichage des map des stations de depart et d'arrivee
@@ -203,6 +230,7 @@ server <- function(input, output) {
         addTiles() %>%
         addCircleMarkers(data = res, lng=res$lng, lat=res$lat,layerId = res$number, popup = paste0(res$number," : ",as.character(round(res$value*100,1)),"%"),color = ComputeColor(res$color_level))
     }else{
+      print(res)
       # on affiche des nombres dans les popups
       lamap <- leaflet() %>%
         addTiles() %>%  
