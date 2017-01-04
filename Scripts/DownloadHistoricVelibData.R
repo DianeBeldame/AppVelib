@@ -28,7 +28,8 @@ filenames <- unique(filenames)
 lapply(filenames, function(filename) {
   
   filename_match <- str_match(filename, filename_pattern)
-  if (filename_match[3] %in% monthes) {
+  if (as.integer(filename_match[3]) %in% monthes) {
+    print(paste0("Downloading ", filename, "..."))
     download.file(paste0(base_url,filename), paste0(download_path,filename))
   }
 })
