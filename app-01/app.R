@@ -1,9 +1,11 @@
 # 1ere version d'une application VelibQuatuor
-library(shiny)
-library(leaflet)
-library(ggmap)
-library(mongolite)
-library(ggplot2)
+ library(shiny)
+ library(leaflet)
+ library(ggmap)
+ library(mongolite)
+ library(ggplot2)
+
+ #source("FonctionsUtiles2.R")
 
 GetStationList <- function(m,addresse){
   # coordinates <- geocode(addresse)
@@ -32,8 +34,8 @@ ComputeColor <- function(proba){
 }
 
 # On initialise la connexion à la base mongo et à la collection velibW
-m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
-
+#m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+m      <- mongo(collection = "velib4",db = "Velib")
 # on construit l'object ui qui décrit l'interface web
 ui <- navbarPage(title = "VelibQuatuor App",
                  tabPanel(title = "Main Application",

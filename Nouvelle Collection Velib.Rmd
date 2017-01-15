@@ -51,11 +51,13 @@ my.data.month <- vector("list",length(files))
 
 compteur  <- 0
 temps_debut<-timestamp()
+compteur <- 1
 for(j in 1:length(files)){
   cat(files[j],"loading on going ...")
   inputFile           <- paste0("data/",files[j])         # nom du fichier
   con                 <- file(inputFile, open = "r")      # ouverture du fichier
-  my.data.month.temp  <- lapply(readLines(con), jsonlite::fromJSON, flatten = TRUE)  # lecture de toutes les lignes
+  #my.data.month.temp  <- lapply(readLines(con), jsonlite::fromJSON, flatten = TRUE)  # lecture de toutes les lignes
+  my.data.month.temp  <- lapply(readLines(con), function(x){try(jsonlite::fromJSON(x, flatten = TRUE))})
   cat("\r",files[j],"rbind on going ...")
   my.data.month[[j]]  <- rbind(my.data.month.temp[[1]][FALSE,], do.call(rbind, my.data.month.temp)) # conversion en une unique data frame
   close(con)
@@ -217,6 +219,7 @@ my.meteo.darksky$currently$date_darksky <- round(my.meteo.darksky$currently$time
 require(mongolite)
 # m      <- mongo(collection = "velib",db = "Velib")
 m      <-mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mongo,":",my.env$pwd_mongo,"@thinkr.fr/velib"),verbose = TRUE, db = "velib")
+m      <- mongo(collection = "velib4",db = "Velib")
 my.data.per.month$date_dark  <- round(my.data.per.month$last_update/1000/1800)*1800
 # on contruit un object json par station
 temps_debut<-timestamp()
@@ -225,19 +228,21 @@ for(i in 1:nrow(my.data.stations)){
   x$position <- as.list(x$position)
   x$loc <- as.list(x$loc)
   x$loc$coordinates <- list(x$loc$coordinates[[1]][1],x$loc$coordinates[[1]][2])
-  serie   <- my.data.per.month[my.data.per.month$number==my.data.stations[i,"number"],]
-  serie   <- merge(serie,my.data.meteo,by.x="date_synop",by.y="date")
+  serie   <- my.data.per.month[my.data.per.month$number==my.data.stations[i,"number"]&!is.na(my.data.per.month$month_num),]
+  #serie   <- merge(serie,my.data.meteo,by.x="date_synop",by.y="date")
   serie   <- merge(serie,my.meteo.darksky$currently,by.x="date_dark",by.y="date_darksky")
-  
-  months  <- unique(serie$month_num)
-  for(j in 1:length(months)){
-    x$serie <- serie[serie$month_num==months[j],]
-    x$month_num <- x$serie$month_num[1]
-    x$month <- x$serie$month[1]
-    x$year  <- x$serie$year[1]
-    json    <- jsonlite::toJSON(x,auto_unbox = TRUE)
-    output  <- m$insert(json)
-    cat("\r",i,"/",nrow(my.data.stations),x$month)
+  years   <- unique(serie$year)
+  for(k in 1:length(years)){
+    months  <- unique(serie$month_num)
+    for(j in 1:length(months)){
+      x$serie     <- serie[serie$year==years[k]&serie$month_num==months[j],]
+      x$month_num <- x$serie$month_num[1]
+      x$month     <- x$serie$month[1]
+      x$year      <- x$serie$year[1]
+      json        <- jsonlite::toJSON(x,auto_unbox = TRUE)
+      output      <- m$insert(json)
+      cat("\r",i,"/",nrow(my.data.stations),x$month,x$year)
+    }
   }
 }
 
