@@ -10,7 +10,7 @@ m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mon
 m      <- mongo(collection = "velib4",db = "Velib")
 
 
-address                       <- "8, boulevard saint michel, paris"
+address                       <- "8, boulevard saint michel, paris" #"88, rue de la Vilette, paris" #c(2.3437,48.8516) #"8, boulevard saint michel, paris"
 today_date                    <- "2016/10/13"
 my.data                       <- Velib.Initialisation(address=address,mongo_connection = m,today_date = today_date)
 
@@ -25,11 +25,37 @@ my.data$dataformodel_separated<- Velib.SeparationDesDonnees(data = my.data$dataf
 
 
 # modelisation
+my.model_1                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+                                                   target_type="bikes",
+                                                   threshold=5,
+                                                   model_family="binomial",
+                                                   ratio=0.5,symmetric=FALSE,model_type="rf")
+varImpPlot(my.model_1$model)
 
+my.model_2                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+                                                   target_type="bikes",
+                                                   threshold=5,
+                                                   model_family="binomial",
+                                                   ratio=0.5,symmetric=FALSE,model_type="ridge")
+
+my.model_3                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+                                                   target_type="bikes",
+                                                   threshold=5,
+                                                   model_family="binomial",
+                                                   ratio=0.5,symmetric=FALSE,model_type="svm")
+
+my.model_4                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+                                                   target_type="bikes",
+                                                   threshold=5,
+                                                   model_family="binomial",
+                                                   ratio=0.5,symmetric=FALSE,model_type="BoostingTree")
 
 
 # application du modele à la prevision demandée
-
+previsions_1<-Velib.ApplyModel(my.model_1,my.data$dataformodel_separated$data.post)
+previsions_2<-Velib.ApplyModel(my.model_2,my.data$dataformodel_separated$data.post)
+previsions_3<-Velib.ApplyModel(my.model_3,my.data$dataformodel_separated$data.post)
+previsions_4<-Velib.ApplyModel(my.model_4,my.data$dataformodel_separated$data.post)
 
 
 

@@ -7,10 +7,10 @@ m      <- mongo(collection = "velib4",db = "Velib")
 ## données d'entrées: 88, rue de la vilette
 #my.data.set.input             <- My.Single.Query(m,address    = "88, rue de la vilette",
 my.data.set.input             <- My.Single.Query(m,address    = "8, boulevard saint michel, paris",
-                                           day        = c("jeudi","vendredi"),
-                                           date_start = "2016/07/01",
-                                           date_end   = "2016/12/31",
-                                           hour       = 0:23)
+                                                   day        = c("jeudi","vendredi"),
+                                                   date_start = "2016/07/01",
+                                                   date_end   = "2016/12/31",
+                                                   hour       = 0:23)
 
 
 liste_stations                <- My.Single.Query.WithoutSerie(m,address    = "8, boulevard saint michel, paris")
