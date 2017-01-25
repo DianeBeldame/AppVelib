@@ -935,7 +935,7 @@ Velib.Modelisation<-function(data,target_type="bikes",threshold=5,model_family="
            alpha <- 1},
          elasticnet={
            model_type <- "r_l_en"
-           model_name <- paste0("ridge (alpha=",alpha,")")
+           model_name <- paste0("elacticnet (alpha=",alpha,")")
          }
   )
          
@@ -1010,7 +1010,8 @@ Velib.Modelisation<-function(data,target_type="bikes",threshold=5,model_family="
                       gamma             <- 1/ncol(my.data.training)
                     }
                     # tune.svm sampling method = 10-fold cross validation
-                    svm_tune <- tune.svm(Y~.,data=my.data.training,kernel=kernel,cost=cost,scale=FALSE,type="C-classification",gamma=gamma)
+                    svm_tune <- tune.svm(Y~.,data=my.data.training,kernel=kernel,cost=cost,scale=FALSE,type="C-classification",
+                                         gamma=gamma)
                     cost     <- svm_tune$best.parameters["cost"][[1]]
                     gamma    <- svm_tune$best.parameters["gamma"][[1]]
                     reg.svm           <- svm(Y~.,data=my.data.training,kernel=kernel,
@@ -1027,7 +1028,8 @@ Velib.Modelisation<-function(data,target_type="bikes",threshold=5,model_family="
                     # ROC curve
                     require(pROC)
                     auc           <- roc(Y[-ind_training],pred_svm_score)
-                    plot(auc,ylim=c(0,1),print.thres=TRUE,main=paste(model_type,'(gamma=',round(gamma,3),' cost=',round(cost,3),' kernel:',kernel,') : ','AUC',round(auc$auc[[1]],2)))
+                    plot(auc,ylim=c(0,1),print.thres=TRUE,main=paste(model_type,'(gamma=',round(gamma,3),' cost=',round(cost,3),
+                                                                     ' kernel:',kernel,') : ','AUC',round(auc$auc[[1]],2)))
                     return(list(model=reg.svm,ind_training=ind_training,fitted_values=pred_svm,model_family=model_family,
                                 model_type=model_type,gamma=gamma,cost=cost,kernel=kernel,score=pred_svm_score,ROC=auc,
                                 target_type=target_type,threshold=threshold,col_labels=names(data)))

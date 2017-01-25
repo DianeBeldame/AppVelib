@@ -27,6 +27,7 @@ my.data$dataformodel_separated<- Velib.SeparationDesDonnees(data = my.data$dataf
 
 
 # modelisation
+set.seed(123)
 my.model_1                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
                                                    target_type="bikes",
                                                    threshold=5,
@@ -34,18 +35,36 @@ my.model_1                      <-Velib.Modelisation(data=my.data$dataformodel_s
                                                    ratio=0.5,symmetric=FALSE,model_type="rf")
 varImpPlot(my.model_1$model)
 
-my.model_2                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+set.seed(123)
+my.model_2a                     <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
                                                    target_type="bikes",
                                                    threshold=5,
                                                    model_family="binomial",
                                                    ratio=0.5,symmetric=FALSE,model_type="ridge")
 
+set.seed(123)
+my.model_2b                     <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+                                                     target_type="bikes",
+                                                     threshold=5,
+                                                     model_family="binomial",
+                                                     ratio=0.5,symmetric=FALSE,model_type="lasso")
+
+set.seed(123)
+my.model_2c                     <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
+                                                     target_type="bikes",
+                                                     threshold=5,
+                                                     model_family="binomial",
+                                                     ratio=0.5,symmetric=FALSE,model_type="elasticnet",
+                                                     alpha = 0.5)
+
+set.seed(123)
 my.model_3                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
                                                    target_type="bikes",
                                                    threshold=5,
                                                    model_family="binomial",
                                                    ratio=0.5,symmetric=FALSE,model_type="svm")
 
+set.seed(123)
 my.model_4                      <-Velib.Modelisation(data=my.data$dataformodel_separated$data.pre,
                                                    target_type="bikes",
                                                    threshold=5,
@@ -55,7 +74,9 @@ my.model_4                      <-Velib.Modelisation(data=my.data$dataformodel_s
 
 # application du modele à la prevision demandée
 previsions_1<-Velib.ApplyModel(my.model_1,my.data$dataformodel_separated$data.post)
-previsions_2<-Velib.ApplyModel(my.model_2,my.data$dataformodel_separated$data.post)
+previsions_2a<-Velib.ApplyModel(my.model_2a,my.data$dataformodel_separated$data.post)
+previsions_2b<-Velib.ApplyModel(my.model_2a,my.data$dataformodel_separated$data.post)
+previsions_2c<-Velib.ApplyModel(my.model_2a,my.data$dataformodel_separated$data.post)
 previsions_3<-Velib.ApplyModel(my.model_3,my.data$dataformodel_separated$data.post)
 previsions_4<-Velib.ApplyModel(my.model_4,my.data$dataformodel_separated$data.post)
 
