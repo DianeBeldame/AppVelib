@@ -10,14 +10,16 @@ m      <- mongo(collection = "velibW", url = paste0("mongodb://",my.env$user_mon
 m      <- mongo(collection = "velib4",db = "Velib")
 
 
-address                       <- "8, boulevard saint michel, paris" #"88, rue de la Vilette, paris" #c(2.3437,48.8516) #"8, boulevard saint michel, paris"
+address                       <- c(2.3437,48.8516) #"8, boulevard saint michel, paris" #"88, rue de la Vilette, paris" #c(2.3437,48.8516) #"8, boulevard saint michel, paris"
 today_date                    <- "2016/10/13"
 my.data                       <- Velib.Initialisation(address=address,mongo_connection = m,today_date = today_date)
 
 # mise en forme des donnees
 prevision                     <- 3
 my.data$dataformodel          <- Velib.MiseEnFormeDesDonnees(dataset = my.data$rawdata,prevision = prevision)
-
+require(ggplot2)
+ggplot(subset(my.data$dataformodel,number==levels(number)[1]))+aes(x=time,y=available_bikes)+geom_point()+facet_wrap(~day_num,ncol=3)+geom_point(aes(x=time,y=available_bikes_minusH,col="red"))
+ggplot(subset(my.data$dataformodel,number==levels(number)[1]))+aes(x=time,y=available_bikes)+geom_point()+facet_wrap(~day_num,ncol=3)+geom_point(aes(x=time,y=available_bikes_minusW,col="red"))
 
 # separation des donnees
 today_hour                    <- 8

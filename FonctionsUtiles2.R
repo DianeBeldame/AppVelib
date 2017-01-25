@@ -1065,7 +1065,7 @@ Velib.Modelisation<-function(data,target_type="bikes",threshold=5,model_family="
                     require(gbm)
                     my.data.test       <- cbind(data[-ind_training,],Y=Y[-ind_training])
                     my.data.training   <- cbind(data[ind_training,],Y=Y[ind_training])
-                    # my.data.training$Y <- factor(my.data.training$Y)
+                    # my.data.training$Y <- factor(my.data.training$Y) sinon gbm plante
                     # my.data.test$Y     <- factor(my.data.training$Y)
 
                     
